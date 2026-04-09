@@ -1,8 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('shows email/password auth when Firebase is configured', async () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByLabelText(/e-mail/i)).toBeInTheDocument();
+  });
+  expect(screen.getByLabelText(/^senha$/i)).toBeInTheDocument();
 });
