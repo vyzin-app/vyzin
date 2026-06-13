@@ -1,6 +1,6 @@
-import { Card } from './ui/card'
-import { Button } from './ui/button'
-import { Badge } from './ui/badge'
+import { Card } from '@/app/components/ui/card'
+import { Button } from '@/app/components/ui/button'
+import { Badge } from '@/app/components/ui/badge'
 import {
   Calendar,
   MessageSquare,
@@ -12,20 +12,24 @@ import {
   UserCog,
   Info,
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
-import { getUserPermissions } from '../utils/permissions'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/app/contexts/AuthContext'
+import { paths } from '@/app/router/paths'
+import { getUserPermissions } from '@/app/utils/permissions'
+import { display } from '@/app/utils/displayLabels'
 
-export function VyzinDashboard({
-  onPageChange,
-  onOpenNewReservation,
-  onOpenNewVisitor,
-}: {
-  onPageChange?: (page: string) => void
-  onOpenNewReservation?: () => void
-  onOpenNewVisitor?: () => void
-}) {
+export function VyzinDashboard() {
+  const navigate = useNavigate()
   const { user, functions } = useAuth()
   const permissions = user ? getUserPermissions(functions) : null
+
+  const openNewReservation = () => {
+    navigate(paths.reservations, { state: { openNewModal: true } })
+  }
+
+  const openNewVisitor = () => {
+    navigate(paths.visitantes, { state: { openNewModal: true } })
+  }
   const upcomingReservations = [
     {
       id: 1,
@@ -96,7 +100,7 @@ export function VyzinDashboard({
     },
     {
       id: 3,
-      message: 'Sua reservation foi confirmada',
+      message: display.reservation.confirmedMessage,
       time: '1 dia atrás',
       type: 'success',
       unread: false,
@@ -115,8 +119,8 @@ export function VyzinDashboard({
       {
         label:
           user?.role === 'admin'
-            ? 'Reservations Totais'
-            : 'Minhas Reservations',
+            ? display.reservation.totalMany
+            : display.reservation.myMany,
         value: user?.role === 'admin' ? '12' : '3',
         icon: Calendar,
         color: 'bg-blue-500',
@@ -265,10 +269,10 @@ export function VyzinDashboard({
               user?.role !== 'doorman' && (
                 <Button
                   className="bg-primary hover:bg-primary/90 h-auto py-4"
-                  onClick={onOpenNewReservation}
+                  onClick={openNewReservation}
                 >
                   <Plus className="w-5 h-5 mr-2" />
-                  Nova Reservation
+                  Nova Reserva
                 </Button>
               )}
             {permissions?.canAccessReservations &&
@@ -276,17 +280,17 @@ export function VyzinDashboard({
                 <Button
                   variant="outline"
                   className="h-auto py-4"
-                  onClick={() => onPageChange?.('reservations')}
+                  onClick={() => navigate(paths.reservations)}
                 >
                   <Calendar className="w-5 h-5 mr-2" />
-                  Ver Reservations
+                  Ver Reservas
                 </Button>
               )}
             {permissions?.canAccessVisitors && (
               <Button
                 variant="outline"
                 className="h-auto py-4"
-                onClick={onOpenNewVisitor}
+                onClick={openNewVisitor}
               >
                 <Users className="w-5 h-5 mr-2" />
                 Registrar Visitante
@@ -296,7 +300,7 @@ export function VyzinDashboard({
               <Button
                 variant="outline"
                 className="h-auto py-4"
-                onClick={() => onPageChange?.('mural')}
+                onClick={() => navigate(paths.mural)}
               >
                 <MessageSquare className="w-5 h-5 mr-2" />
                 Ver Avisos
@@ -306,7 +310,7 @@ export function VyzinDashboard({
               <Button
                 variant="outline"
                 className="h-auto py-4"
-                onClick={() => onPageChange?.('informacoes')}
+                onClick={() => navigate(paths.informacoes)}
               >
                 <Info className="w-5 h-5 mr-2" />
                 Informações
@@ -316,7 +320,7 @@ export function VyzinDashboard({
               <Button
                 variant="outline"
                 className="h-auto py-4"
-                onClick={() => onPageChange?.('usuarios')}
+                onClick={() => navigate(paths.seguranca.usuarios)}
               >
                 <UserCog className="w-5 h-5 mr-2" />
                 Gerenciar Usuários
@@ -330,7 +334,7 @@ export function VyzinDashboard({
           {/* Upcoming Reservations */}
           <Card className="lg:col-span-2 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Minhas Reservations</h3>
+              <h3 className="text-lg font-semibold">{display.reservation.myMany}</h3>
               <Button variant="ghost" size="sm">
                 Ver todas
               </Button>
@@ -433,7 +437,7 @@ export function VyzinDashboard({
                   </div>
                   <div className="p-3 rounded-lg bg-secondary/50">
                     <p className="text-sm font-medium">
-                      Sua reservation foi confirmada
+                      {display.reservation.confirmedMessage}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       1 dia atrás

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Card } from './ui/card'
-import { Button } from './ui/button'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
-import { Badge } from './ui/badge'
+import { Card } from '@/app/components/ui/card'
+import { Button } from '@/app/components/ui/button'
+import { Input } from '@/app/components/ui/input'
+import { Label } from '@/app/components/ui/label'
+import { Badge } from '@/app/components/ui/badge'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from './ui/dialog'
+} from '@/app/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +20,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from './ui/alert-dialog'
+} from '@/app/components/ui/alert-dialog'
 import {
   Users,
   Plus,
@@ -42,15 +42,15 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select'
-import { useAuth } from '../contexts/AuthContext'
+} from '@/app/components/ui/select'
+import { useAuth } from '@/app/contexts/AuthContext'
 import {
   CreateUserInput,
   ManagedUser,
   userRepository,
-} from '../data/userRepository'
-import { profileRepository } from '../data/profileRepository'
-import { Profile } from '../domain/profile'
+} from '@/app/data/userRepository'
+import { profileRepository } from '@/app/data/profileRepository'
+import { Profile } from '@/app/domain/profile'
 
 function generatePassword(): string {
   const chars =
@@ -473,7 +473,7 @@ export function UserManagement() {
                 />
               </div>
               <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="email">Email *</Label>
+                <Label htmlFor="email">E-mail *</Label>
                 <Input
                   id="email"
                   type="email"

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Card } from "./ui/card";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Textarea } from "./ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Card } from "@/app/components/ui/card";
+import { Button } from "@/app/components/ui/button";
+import { Badge } from "@/app/components/ui/badge";
+import { Input } from "@/app/components/ui/input";
+import { Label } from "@/app/components/ui/label";
+import { Textarea } from "@/app/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/app/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/app/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/app/components/ui/select";
 import {
   MessageSquare,
   Search,
@@ -23,13 +23,13 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
-import { useAuth } from "../contexts/AuthContext";
-import { getUserPermissions } from "../utils/permissions";
-import { announcementRepository } from "../data/announcementRepository";
+import { useAuth } from "@/app/contexts/AuthContext";
+import { getUserPermissions } from "@/app/utils/permissions";
+import { announcementRepository } from "@/app/data/announcementRepository";
 import {
   Announcement,
   AnnouncementCategory,
-} from "../domain/announcement";
+} from "@/app/domain/announcement";
 
 const categories: {
   id: AnnouncementCategory | "all";

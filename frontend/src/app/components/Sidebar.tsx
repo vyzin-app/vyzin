@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { cn } from './ui/utils'
 import {
   LayoutDashboard,
@@ -14,41 +15,50 @@ import {
   ChevronRight,
   LogOut,
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
-import { getUserPermissions } from '../utils/permissions'
-
-interface SidebarProps {
-  currentPage: string
-  onPageChange: (page: string) => void
-}
+import { useAuth } from '@/app/contexts/AuthContext'
+import { paths } from '@/app/router/paths'
+import { getUserPermissions } from '@/app/utils/permissions'
+import { display } from '@/app/utils/displayLabels'
 
 interface NavigationItem {
   id: string
+  path: string
   name: string
-  icon: any
+  icon: React.ComponentType<{ className?: string }>
   description: string
   requiresPermission?: keyof ReturnType<typeof getUserPermissions>
   submenu?: {
     id: string
+    path: string
     name: string
-    icon: any
+    icon: React.ComponentType<{ className?: string }>
     requiresPermission?: keyof ReturnType<typeof getUserPermissions>
   }[]
 }
 
-export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
+export function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(false)
   const [expandedMenus, setExpandedMenus] = useState<string[]>([])
   const { user, functions, logout } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
 
   const permissions = user ? getUserPermissions(functions) : null
 
-  const handleNavigationClick = (pageId: string) => {
+  useEffect(() => {
+    if (location.pathname.startsWith(paths.seguranca.root)) {
+      setExpandedMenus((prev) =>
+        prev.includes('seguranca') ? prev : [...prev, 'seguranca'],
+      )
+    }
+  }, [location.pathname])
+
+  const handleNavigation = (path: string) => {
     if (!isExpanded) {
       setIsExpanded(true)
-      setTimeout(() => onPageChange(pageId), 150)
+      setTimeout(() => navigate(path), 150)
     } else {
-      onPageChange(pageId)
+      navigate(path)
     }
   }
 
@@ -66,13 +76,15 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
   const navigationItems: NavigationItem[] = [
     {
       id: 'dashboard',
-      name: 'Dashboard',
+      path: paths.dashboard,
+      name: display.dashboard,
       icon: LayoutDashboard,
       description: 'Visão geral',
       requiresPermission: 'canAccessDashboard',
     },
     {
       id: 'reservations',
+      path: paths.reservations,
       name: 'Reservas',
       icon: Calendar,
       description: 'Agendar espaços',
@@ -80,6 +92,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     },
     {
       id: 'mural',
+      path: paths.mural,
       name: 'Mural de Avisos',
       icon: MessageSquare,
       description: 'Comunicados',
@@ -87,6 +100,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     },
     {
       id: 'visitantes',
+      path: paths.visitantes,
       name: 'Visitantes',
       icon: Users,
       description: 'Cadastro de visitas',
@@ -94,28 +108,30 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
     },
     {
       id: 'seguranca',
+      path: paths.seguranca.root,
       name: 'Segurança',
       icon: Shield,
-      description: 'Usuários do sistema',
-      requiresPermission: 'canAccessSecurity',
+      description: 'Usuários e perfis',
       submenu: [
         {
           id: 'usuarios',
+          path: paths.seguranca.usuarios,
           name: 'Usuários',
           icon: Users,
           requiresPermission: 'canManageUsers',
         },
+        {
+          id: 'perfis',
+          path: paths.seguranca.perfis,
+          name: 'Perfis',
+          icon: ShieldCheck,
+          requiresPermission: 'canAccessProfiles',
+        },
       ],
     },
     {
-      id: 'perfis',
-      name: 'Perfis',
-      icon: ShieldCheck,
-      description: 'Perfis e permissões',
-      requiresPermission: 'canAccessProfiles',
-    },
-    {
       id: 'informacoes',
+      path: paths.informacoes,
       name: 'Informações',
       icon: Info,
       description: 'Regras e contatos',
@@ -125,33 +141,39 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
 
   const filteredNavigationItems = navigationItems
     .filter((item) => {
-      if (!permissions || !item.requiresPermission) return true
-      if (!permissions[item.requiresPermission]) return false
+      if (!permissions) return true
+
       if (item.submenu) {
-        const filteredSubmenu = item.submenu.filter((subItem) => {
+        const visibleSubmenu = item.submenu.filter((subItem) => {
           if (!subItem.requiresPermission) return true
-          return permissions[
-            subItem.requiresPermission as keyof typeof permissions
-          ]
+          return permissions[subItem.requiresPermission]
         })
-        return filteredSubmenu.length > 0
+        return visibleSubmenu.length > 0
       }
+
+      if (item.requiresPermission && !permissions[item.requiresPermission]) {
+        return false
+      }
+
       return true
     })
     .map((item) => {
-      if (item.submenu) {
-        return {
-          ...item,
-          submenu: item.submenu.filter((subItem) => {
-            if (!permissions || !subItem.requiresPermission) return true
-            return permissions[
-              subItem.requiresPermission as keyof typeof permissions
-            ]
-          }),
-        }
+      if (!item.submenu || !permissions) return item
+      return {
+        ...item,
+        submenu: item.submenu.filter((subItem) => {
+          if (!subItem.requiresPermission) return true
+          return permissions[subItem.requiresPermission]
+        }),
       }
-      return item
     })
+
+  const isPathActive = (path: string, hasSubmenu: boolean) => {
+    if (hasSubmenu) {
+      return location.pathname.startsWith(path)
+    }
+    return location.pathname === path
+  }
 
   return (
     <div className="ml-6 my-6 flex-shrink-0">
@@ -163,7 +185,6 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
         )}
         style={{ overflow: 'hidden' }}
       >
-        {/* Header with Logo */}
         <div className="p-6 flex flex-col items-center relative flex-shrink-0">
           {isExpanded && (
             <button
@@ -189,13 +210,12 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           )}
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 overflow-y-auto overflow-x-hidden">
           <div className="space-y-2">
             {filteredNavigationItems.map((item) => {
               const Icon = item.icon
-              const isActive = currentPage === item.id
               const hasSubmenu = item.submenu && item.submenu.length > 0
+              const isActive = isPathActive(item.path, !!hasSubmenu)
               const isSubmenuExpanded = expandedMenus.includes(item.id)
 
               return (
@@ -206,7 +226,7 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                         if (hasSubmenu) {
                           toggleSubmenu(item.id)
                         } else {
-                          handleNavigationClick(item.id)
+                          handleNavigation(item.path)
                         }
                       }}
                       className={cn(
@@ -276,17 +296,16 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
                     )}
                   </div>
 
-                  {/* Submenu */}
                   {hasSubmenu && isExpanded && isSubmenuExpanded && (
                     <div className="ml-4 mt-2 space-y-1">
                       {item.submenu?.map((subItem) => {
                         const SubIcon = subItem.icon
-                        const isSubActive = currentPage === subItem.id
+                        const isSubActive = location.pathname === subItem.path
 
                         return (
                           <button
                             key={subItem.id}
-                            onClick={() => handleNavigationClick(subItem.id)}
+                            onClick={() => handleNavigation(subItem.path)}
                             className={cn(
                               'w-full px-4 py-2 rounded-lg flex items-center transition-all duration-300',
                               isSubActive
@@ -323,7 +342,6 @@ export function Sidebar({ currentPage, onPageChange }: SidebarProps) {
           </div>
         </nav>
 
-        {/* User Profile Section */}
         <div className="p-4 flex-shrink-0">
           <div className="space-y-2">
             <div className="flex justify-center">

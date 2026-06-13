@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Card } from './ui/card'
-import { Button } from './ui/button'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
-import { Badge } from './ui/badge'
-import { Textarea } from './ui/textarea'
+import { Card } from '@/app/components/ui/card'
+import { Button } from '@/app/components/ui/button'
+import { Input } from '@/app/components/ui/input'
+import { Label } from '@/app/components/ui/label'
+import { Badge } from '@/app/components/ui/badge'
+import { Textarea } from '@/app/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from './ui/dialog'
+} from '@/app/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,7 +21,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from './ui/alert-dialog'
+} from '@/app/components/ui/alert-dialog'
 import {
   ShieldCheck,
   Plus,
@@ -30,11 +30,11 @@ import {
   Lock,
   Loader2,
 } from 'lucide-react'
-import { authRepository } from '../data/authRepository'
-import { profileRepository } from '../data/profileRepository'
-import { AppFunction, FunctionDescriptor } from '../domain/appFunction'
-import { Profile } from '../domain/profile'
-import { useAuth } from '../contexts/AuthContext'
+import { authRepository } from '@/app/data/authRepository'
+import { profileRepository } from '@/app/data/profileRepository'
+import { AppFunction, FunctionDescriptor } from '@/app/domain/appFunction'
+import { Profile } from '@/app/domain/profile'
+import { useAuth } from '@/app/contexts/AuthContext'
 
 interface ProfileForm {
   name: string

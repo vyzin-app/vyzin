@@ -1,7 +1,7 @@
-import { Card } from './ui/card'
-import { Button } from './ui/button'
-import { Badge } from './ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { Card } from '@/app/components/ui/card'
+import { Button } from '@/app/components/ui/button'
+import { Badge } from '@/app/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs'
 import {
   Info,
   Phone,
@@ -16,8 +16,8 @@ import {
   ExternalLink,
   Pencil,
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
-import { getUserPermissions } from '../utils/permissions'
+import { useAuth } from '@/app/contexts/AuthContext'
+import { getUserPermissions } from '@/app/utils/permissions'
 
 export function Informacoes() {
   const { functions } = useAuth()
@@ -105,7 +105,7 @@ export function Informacoes() {
       category: 'Áreas Comuns',
       icon: Building2,
       items: [
-        'Reservation de churrasqueiras com 48h de antecedência',
+        'Reserva de churrasqueiras com 48h de antecedência',
         'Salão de festas: máximo 80 pessoas',
         'Proibido som automotivo após 22h',
         'Pets devem circular com guia e focinheira',

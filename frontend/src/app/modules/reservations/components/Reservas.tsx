@@ -1,16 +1,16 @@
 import { useState } from 'react'
-import { Card } from './ui/card'
-import { Button } from './ui/button'
-import { Badge } from './ui/badge'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
+import { Card } from '@/app/components/ui/card'
+import { Button } from '@/app/components/ui/button'
+import { Badge } from '@/app/components/ui/badge'
+import { Input } from '@/app/components/ui/input'
+import { Label } from '@/app/components/ui/label'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from './ui/dialog'
+} from '@/app/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,15 +20,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from './ui/alert-dialog'
+} from '@/app/components/ui/alert-dialog'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+} from '@/app/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs'
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -46,13 +46,14 @@ import {
   ChevronUp,
   Info,
 } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
-import { getUserPermissions } from '../utils/permissions'
+import { useAuth } from '@/app/contexts/AuthContext'
+import { getUserPermissions } from '@/app/utils/permissions'
+import { display } from '@/app/utils/displayLabels'
 import {
   useCondoData,
   Visitor,
   Reservation,
-} from '../contexts/CondoDataContext'
+} from '@/app/contexts/CondoDataContext'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -220,13 +221,13 @@ function AddVisitorDialog({
       cpf: newForm.cpf,
       phone: newForm.phone,
       email: newForm.email,
-      purpose: newForm.purpose || 'Convidado de reservation',
+      purpose: newForm.purpose || display.reservation.guestPurpose,
       date: reservation.date,
       time: reservation.startTime,
       notes: newForm.notes,
       visitType: 'reservation',
       status: 'authorized',
-      authorizedBy: 'Vinculado via reservation',
+      authorizedBy: display.reservation.linkedVia,
     })
     await linkVisitorToReservation(id, reservation.id)
     onClose()
@@ -238,7 +239,7 @@ function AddVisitorDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="w-5 h-5 text-primary" />
-            Adicionar Visitante à Reservation
+            {display.reservation.addVisitor}
           </DialogTitle>
           <p className="text-sm text-muted-foreground mt-1">
             {reservation.space} — {formatDateBR(reservation.date)}
@@ -294,7 +295,7 @@ function AddVisitorDialog({
           {/* ── Register new ── */}
           <TabsContent value="new" className="space-y-4 mt-4">
             <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-sm text-primary">
-              O visitante será cadastrado como convidado desta reservation
+              {display.reservation.guestRegisteredAs}
               automaticamente.
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -424,7 +425,7 @@ function TimeBlockPicker({
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-sm bg-orange-400 inline-block" />
-          Reservationdo
+          {display.reservation.reserved}
         </span>
       </div>
 
@@ -466,7 +467,7 @@ function TimeBlockPicker({
               {slot.label}
               {isReserved && (
                 <span className="block text-xs font-normal text-orange-500 mt-0.5">
-                  Reservationdo
+                  {display.reservation.reserved}
                 </span>
               )}
             </button>
@@ -640,7 +641,7 @@ function ReservationCard({
               {linkedVisitors.length === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                   <UserX className="w-4 h-4" />
-                  <span>Nenhum visitante vinculado a esta reservation.</span>
+                  <span>{display.reservation.noLinkedVisitors}</span>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -677,9 +678,7 @@ function ReservationCard({
                 <div className="flex items-start gap-2 text-sm text-muted-foreground p-3 bg-muted/40 rounded-lg">
                   <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
                   <span>
-                    Esta reservation foi cancelada. Os vínculos de visitantes
-                    foram desfeitos, mas os registros dos visitantes permanecem
-                    no sistema.
+                    {display.reservation.cancelledNotice}
                   </span>
                 </div>
               ) : (
@@ -868,7 +867,7 @@ export function Reservations({
   // Stats
   const stats = [
     {
-      label: isResident ? 'Minhas Reservations' : 'Total',
+      label: isResident ? display.reservation.myMany : 'Total',
       value: roleFiltered.length,
       iconBg: 'bg-blue-500',
     },
@@ -892,12 +891,12 @@ export function Reservations({
           <div>
             <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
               <CalendarIcon className="w-7 h-7 text-primary" />
-              Reservations
+              {display.reservation.many}
             </h1>
             <p className="text-muted-foreground mt-1">
               {isResident
-                ? 'Gerencie suas reservations'
-                : 'Gerencie as reservations dos espaços comuns'}
+                ? display.reservation.manageOwn
+                : display.reservation.manageAll}
             </p>
           </div>
           {(isAdmin || isResident) && (
@@ -906,7 +905,7 @@ export function Reservations({
               className="bg-primary hover:bg-primary/90"
             >
               <Plus className="w-4 h-4 mr-2" />
-              Nova Reservation
+              {display.reservation.new}
             </Button>
           )}
         </div>
@@ -970,7 +969,7 @@ export function Reservations({
         <div className="space-y-4">
           {filtered.length === 0 && (
             <Card className="p-12 text-center text-muted-foreground">
-              Nenhuma reservation encontrada.
+              {display.reservation.noneFound}
             </Card>
           )}
           {filtered.map((r) => (
@@ -990,15 +989,15 @@ export function Reservations({
 
         {/* Reservation Rules */}
         <Card className="p-6">
-          <h3 className="font-semibold mb-3">Regras de Reservation</h3>
+          <h3 className="font-semibold mb-3">{display.reservation.rules}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-muted-foreground">
             {[
               'Horário de funcionamento: 08:00 às 22:00',
               'Quadra Esportiva e Área da Piscina: blocos de 1 hora',
               'Salão de Festas e Churrasqueiras: blocos de 5 horas',
-              'Reservations devem ser feitas com no mínimo 48h de antecedência',
+              display.reservation.ruleAdvance48h,
               'Cancelamentos devem ser feitos com 24h de antecedência',
-              'Visitantes vinculados são removidos automaticamente ao cancelar a reservation',
+              display.reservation.ruleUnlinkOnCancel,
             ].map((rule, i) => (
               <div key={i} className="flex gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
@@ -1014,8 +1013,8 @@ export function Reservations({
             <DialogHeader>
               <DialogTitle>
                 {editingReservation
-                  ? 'Editar Reservation'
-                  : 'Nova Reservation'}
+                  ? display.reservation.edit
+                  : display.reservation.new}
               </DialogTitle>
             </DialogHeader>
 
@@ -1093,8 +1092,7 @@ export function Reservations({
               <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg flex items-start gap-2 text-sm text-primary">
                 <Users className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <span>
-                  O número de convidados é calculado automaticamente com base
-                  nos visitantes vinculados à reservation.
+                  {display.reservation.linkedCountHint}
                 </span>
               </div>
             </div>
@@ -1113,7 +1111,7 @@ export function Reservations({
               >
                 {editingReservation
                   ? 'Salvar Alterações'
-                  : 'Criar Reservation'}
+                  : display.reservation.create}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1128,9 +1126,7 @@ export function Reservations({
             <AlertDialogHeader>
               <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
               <AlertDialogDescription>
-                Tem certeza que deseja excluir esta reservation? Os vínculos com
-                visitantes serão removidos automaticamente, mas os registros dos
-                visitantes serão preservationdos.
+                {display.reservation.deleteConfirm}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

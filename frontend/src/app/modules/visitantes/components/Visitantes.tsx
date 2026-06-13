@@ -1,16 +1,16 @@
 import { useState } from 'react'
-import { Card } from './ui/card'
-import { Button } from './ui/button'
-import { Badge } from './ui/badge'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
+import { Card } from '@/app/components/ui/card'
+import { Button } from '@/app/components/ui/button'
+import { Badge } from '@/app/components/ui/badge'
+import { Input } from '@/app/components/ui/input'
+import { Label } from '@/app/components/ui/label'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from './ui/dialog'
+} from '@/app/components/ui/dialog'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,14 +20,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from './ui/alert-dialog'
+} from '@/app/components/ui/alert-dialog'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select'
+} from '@/app/components/ui/select'
 import {
   UserPlus,
   Users,
@@ -44,9 +44,10 @@ import {
   Home,
   CalendarDays,
 } from 'lucide-react'
-import { useCondoData, Visitor, VisitType } from '../contexts/CondoDataContext'
-import { useAuth } from '../contexts/AuthContext'
-import { getUserPermissions } from '../utils/permissions'
+import { useCondoData, Visitor, VisitType } from '@/app/contexts/CondoDataContext'
+import { useAuth } from '@/app/contexts/AuthContext'
+import { getUserPermissions } from '@/app/utils/permissions'
+import { display } from '@/app/utils/displayLabels'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ const visitTypeConfig: Record<
     className: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
   },
   reservation: {
-    label: 'Convidado de Reservation',
+    label: display.reservation.guestOf,
     Icon: CalendarDays,
     className: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   },
@@ -791,7 +792,7 @@ export function Visitantes({
                       <SelectItem value="reservation">
                         <div className="flex items-center gap-2">
                           <CalendarDays className="w-4 h-4" />
-                          Convidado de Reservation
+                          {display.reservation.guestOf}
                         </div>
                       </SelectItem>
                     </SelectContent>
@@ -801,11 +802,11 @@ export function Visitantes({
                 {/* Reservation picker — only when visitType=reservation */}
                 {form.visitType === 'reservation' && (
                   <div className="space-y-2 col-span-2">
-                    <Label>Vincular à Reservation</Label>
+                    <Label>{display.reservation.linkLabel}</Label>
                     {reservations.filter((r) => r.status !== 'cancelled')
                       .length === 0 ? (
                       <p className="text-sm text-muted-foreground px-3 py-2 bg-muted/50 rounded-lg">
-                        Nenhuma reservation ativa disponível.
+                        {display.reservation.noneActive}
                       </p>
                     ) : (
                       <Select
@@ -815,7 +816,7 @@ export function Visitantes({
                         }
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Selecionar reservation (opcional)" />
+                          <SelectValue placeholder={display.reservation.selectOptional} />
                         </SelectTrigger>
                         <SelectContent>
                           {reservations
@@ -836,7 +837,7 @@ export function Visitantes({
                     )}
                     <p className="text-xs text-muted-foreground">
                       O visitante será adicionado à lista de convidados da
-                      reservation selecionada.
+                      reserva selecionada.
                     </p>
                   </div>
                 )}
@@ -892,7 +893,7 @@ export function Visitantes({
               <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
               <AlertDialogDescription>
                 Tem certeza que deseja excluir este visitante? O registro será
-                removido, mas quaisquer vínculos com reservations também serão
+                removido, mas quaisquer vínculos com reservas também serão
                 desfeitos.
               </AlertDialogDescription>
             </AlertDialogHeader>
