@@ -1,69 +1,63 @@
-import { FirebaseError } from 'firebase/app'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth'
 import { firebaseAuth } from '../../infra/firebase/firebaseClient'
-import { AuthService } from './AuthService'
+import type { AuthService } from './AuthService'
 
-const TOKEN_STORAGE_KEY = 'vyzin_id_token'
-
-/** Maps Firebase Auth errors to user-facing Portuguese messages. */
-export function mapFirebaseAuthError(error: unknown): string {
-  if (error instanceof FirebaseError) {
-    switch (error.code) {
-      case 'auth/configuration-not-found':
-        return (
-          'Login por e-mail ainda nao esta habilitado no Firebase. ' +
-          'Console → Authentication → Sign-in method → E-mail/senha → Ativar.'
-        )
-      case 'auth/invalid-credential':
-      case 'auth/wrong-password':
-      case 'auth/user-not-found':
-      case 'auth/invalid-email':
-        return 'E-mail ou senha invalidos.'
-      case 'auth/too-many-requests':
-        return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
-      default:
-        return error.message
-    }
-  }
-  return error instanceof Error ? error.message : 'Erro ao entrar.'
-}
-
-/** Firebase-backed implementation of the AuthService Strategy. */
-export class FirebaseAuthService implements AuthService {
+class FirebaseAuthService implements AuthService {
   async login(email: string, password: string): Promise<void> {
     await signInWithEmailAndPassword(firebaseAuth, email, password)
-    await this.persistToken()
   }
 
   async logout(): Promise<void> {
-    localStorage.removeItem(TOKEN_STORAGE_KEY)
     await signOut(firebaseAuth)
   }
 
   async getToken(): Promise<string | null> {
     const user = firebaseAuth.currentUser
     if (!user) {
-      return localStorage.getItem(TOKEN_STORAGE_KEY)
+      return null
     }
-    const token = await user.getIdToken()
-    localStorage.setItem(TOKEN_STORAGE_KEY, token)
-    return token
-  }
-
-  private async persistToken(): Promise<void> {
-    const token = await this.getToken()
-    if (token) {
-      localStorage.setItem(TOKEN_STORAGE_KEY, token)
-    }
+    return user.getIdToken()
   }
 
   onAuthStateChanged(callback: (isAuthenticated: boolean) => void): () => void {
-    return onAuthStateChanged(firebaseAuth, (user) => callback(user !== null))
+    return onAuthStateChanged(firebaseAuth, (user) => {
+      callback(user !== null)
+    })
   }
 }
 
 export const firebaseAuthService = new FirebaseAuthService()
+
+/** Maps Firebase Auth errors to user-facing Portuguese messages. */
+export function mapFirebaseAuthError(error: unknown): string {
+  const code =
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as { code: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : ''
+
+  switch (code) {
+    case 'auth/invalid-email':
+      return 'E-mail inválido.'
+    case 'auth/user-disabled':
+      return 'Esta conta foi desativada.'
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+      return 'E-mail ou senha incorretos.'
+    case 'auth/too-many-requests':
+      return 'Muitas tentativas. Tente novamente mais tarde.'
+    case 'auth/configuration-not-found':
+      return 'Autenticação não configurada no Firebase. Habilite E-mail/senha no console.'
+    default:
+      return error instanceof Error
+        ? error.message
+        : 'Não foi possível entrar. Tente novamente.'
+  }
+}
