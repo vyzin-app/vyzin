@@ -1,3 +1,5 @@
+import axios, { AxiosError, type AxiosInstance } from 'axios'
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -23,69 +25,81 @@ interface ApiClientOptions {
 }
 
 /**
- * Factory that builds an HTTP client which injects the Firebase ID token as a
- * Bearer header, parses JSON, and normalizes errors. Decouples the data layer
- * from fetch and from how the token is obtained (Dependency Inversion).
+ * Factory that builds an HTTP client (Axios) which injects the Firebase ID token
+ * as a Bearer header and normalizes errors. Decouples the data layer from the
+ * transport and from how the token is obtained (Dependency Inversion).
  */
 export function createApiClient({
   baseUrl,
   getToken,
   onUnauthorized,
 }: ApiClientOptions): ApiClient {
+  const http: AxiosInstance = axios.create({
+    baseURL: baseUrl,
+  })
+
+  http.interceptors.request.use(async (config) => {
+    const token = await getToken()
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  })
+
+  http.interceptors.response.use(
+    (response) => response,
+    (error: AxiosError) => {
+      const status = error.response?.status ?? 0
+
+      if (status === 401) {
+        onUnauthorized?.()
+      }
+
+      return Promise.reject(
+        new ApiError(status, extractErrorMessage(error)),
+      )
+    },
+  )
+
   async function request<T>(
-    method: string,
+    method: 'get' | 'post' | 'put' | 'patch' | 'delete',
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const token = await getToken()
-    const headers: Record<string, string> = {}
-    if (body !== undefined) {
-      headers['Content-Type'] = 'application/json'
-    }
-    if (token) {
-      headers.Authorization = `Bearer ${token}`
-    }
-
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await http.request<T>({
       method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      url: path,
+      data: body,
     })
 
-    if (response.status === 401) {
-      onUnauthorized?.()
-    }
-
-    if (!response.ok) {
-      throw new ApiError(response.status, await extractErrorMessage(response))
-    }
-
-    if (response.status === 204) {
-      return undefined as T
-    }
-
-    const text = await response.text()
-    return (text ? JSON.parse(text) : undefined) as T
+    return response.data
   }
 
   return {
-    get: (path) => request('GET', path),
-    post: (path, body) => request('POST', path, body),
-    put: (path, body) => request('PUT', path, body),
-    patch: (path, body) => request('PATCH', path, body),
-    del: (path) => request<void>('DELETE', path),
+    get: (path) => request('get', path),
+    post: (path, body) => request('post', path, body),
+    put: (path, body) => request('put', path, body),
+    patch: (path, body) => request('patch', path, body),
+    del: (path) => request<void>('delete', path),
   }
 }
 
-async function extractErrorMessage(response: Response): Promise<string> {
-  try {
-    const data = await response.json()
+function extractErrorMessage(error: AxiosError): string {
+  const data = error.response?.data
+
+  if (typeof data === 'object' && data !== null && 'message' in data) {
     const message = (data as { message?: string | string[] }).message
     if (Array.isArray(message)) {
       return message.join(', ')
     }
-    return message ?? response.statusText
-  } catch {
-    return response.statusText
+    if (typeof message === 'string') {
+      return message
+    }
   }
+
+  if (typeof data === 'string' && data.trim()) {
+    return data
+  }
+
+  return error.message || 'Erro na requisição'
 }
