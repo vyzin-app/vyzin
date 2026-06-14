@@ -15,7 +15,8 @@ Este documento descreve **o que o sistema faz e não faz**, independentemente da
 | RN-02 | Permissões são definidas por **perfil**, não hardcoded por papel fixo no código de negócio. |
 | RN-03 | O backend é a **fonte de verdade** para autorização; o frontend apenas oculta UI. |
 | RN-04 | Um usuário pertence a **exatamente um perfil** por vez (`profileId`). |
-| RN-05 | Dados persistidos no Firestore; o Admin SDK no backend ignora regras de segurança do cliente. |
+| RN-05 | Dados persistidos no Firestore; o Admin SDK no backend aplica **security scopes** por entidade. |
+| RN-06 | Filtros de busca textual nas listagens são aplicados **no servidor**, não apenas no cliente. |
 
 ---
 
@@ -35,6 +36,7 @@ Este documento descreve **o que o sistema faz e não faz**, independentemente da
 
 - Logout remove o token local e encerra a sessão Firebase.
 - Token expirado → API retorna 401; frontend redireciona ao login.
+- Após alteração de funções no perfil (seed ou CRUD de perfis), usuário deve **logout/login** para recarregar permissões no frontend.
 
 ### RN-AUTH-04 — Endpoint `/auth/me`
 
@@ -57,11 +59,11 @@ Funções são identificadores estáveis (`area:acao`). Catálogo completo em `b
 
 | Função | Descrição |
 |--------|-----------|
-| `reservations:read` | Listar e visualizar reservas |
+| `reservations:read` | Listar e visualizar reservas (escopo por security scope) |
 | `reservations:manage` | Criar, editar e excluir **próprias** reservas |
 | `reservations:manage_all` | Criar, editar e excluir reservas de **qualquer** usuário |
 | `visitors:read` | Listar e visualizar visitantes |
-| `visitors:manage` | Cadastrar, editar e remover visitantes |
+| `visitors:manage` | Cadastrar, editar, remover e **vincular** visitantes |
 | `visitors:workflow` | Autorizar, negar e registrar saída (portaria) |
 | `announcements:read` | Visualizar avisos |
 | `announcements:manage` | Publicar, editar e remover avisos |
@@ -71,14 +73,17 @@ Funções são identificadores estáveis (`area:acao`). Catálogo completo em `b
 | `users:manage` | Criar, editar e remover usuários |
 | `profiles:read` | Listar perfis e catálogo de funções |
 | `profiles:manage` | Criar, editar e remover perfis |
+| `reports:read` | Visualizar relatório operacional e exportar CSV |
 
 ### RN-RBAC-02 — Perfis de sistema (seed)
 
 | Perfil | ID | Funções (resumo) |
 |--------|-----|------------------|
-| Administrador | `admin` | Todas |
-| Porteiro | `doorman` | Reservas (leitura), visitantes (CRUD + workflow), avisos (leitura), usuários (leitura + gestão) |
-| Morador | `resident` | Reservas (leitura + próprias), visitantes (leitura + CRUD), avisos (leitura), informações (leitura) |
+| Administrador | `admin` | Todas (`ALL_FUNCTIONS`, sincronizado a cada seed) |
+| Porteiro | `doorman` | Reservas (leitura geral), visitantes (CRUD + workflow + vínculo), avisos (leitura), usuários, **relatórios** |
+| Morador | `resident` | Reservas (leitura + próprias), visitantes (leitura + CRUD + vínculo), avisos, informações, **relatórios** (dados próprios) |
+
+O seed **mescla** novas funções em perfis existentes ao ser reexecutado.
 
 ### RN-RBAC-03 — Guarda de funções
 
@@ -90,7 +95,7 @@ Funções são identificadores estáveis (`area:acao`). Catálogo completo em `b
 Perfis marcados `isSystem: true` (ex.: `admin`):
 
 - **Não podem ser excluídos.**
-- **Não podem perder** as funções `profiles:manage` e `users:manage` (evita bloquear toda a administração).
+- **Não podem perder** as funções `profiles:manage` e `users:manage`.
 
 ### RN-RBAC-05 — Exclusão de perfil
 
@@ -99,44 +104,16 @@ Perfis marcados `isSystem: true` (ex.: `admin`):
 
 ### RN-RBAC-06 — Perfis customizados
 
-- Administrador pode criar perfis com subconjunto arbitrário de funções.
+- Administrador pode criar perfis com subconjunto arbitrário de funções via tela **Segurança → Perfis**.
 - Novos perfis nascem com `isSystem: false`.
 
 ---
 
 ## 4. Usuários
 
-### RN-USER-01 — Criação
+### RN-USER-01 a RN-USER-05
 
-- Cria conta no Firebase Auth (e-mail, senha, displayName).
-- Grava documento `users/{uid}` com dados pessoais e `profileId`.
-- Define custom claim `{ profileId }`.
-
-### RN-USER-02 — Campos
-
-| Campo | Obrigatório | Observação |
-|-------|-------------|------------|
-| name | Sim | Nome completo |
-| email | Sim | Único no Firebase Auth |
-| cpf | Sim | Identificação |
-| phone | Sim | Contato |
-| profileId | Sim | Deve existir em `profiles` |
-| apartment | Não | Típico para moradores |
-| block | Não | Bloco/torre |
-
-### RN-USER-03 — Atualização
-
-- E-mail **não é alterável** pela API de update (permanece o da criação).
-- Mudança de `profileId` → atualiza custom claim imediatamente.
-
-### RN-USER-04 — Exclusão
-
-- Remove usuário do Firebase Auth **e** documento Firestore.
-
-### RN-USER-05 — Quem gerencia
-
-- Requer função `users:manage`.
-- Porteiro (perfil seed) possui `users:manage` para cadastro operacional na portaria.
+(Inalteradas — ver versão anterior: criação provisiona Firebase Auth + Firestore + claim; campos obrigatórios; e-mail imutável no update; exclusão remove Auth + Firestore; gestão requer `users:manage`.)
 
 ---
 
@@ -148,213 +125,176 @@ Perfis marcados `isSystem: true` (ex.: `admin`):
 |-------|----------------|-------|
 | space | string | Nome da área (salão, churrasqueira, etc.) |
 | date | data | Dia da reserva |
-| startTime / endTime | string (HH:mm) | Intervalo solicitado |
+| startTime / endTime | string (HH:mm) | Intervalo do slot selecionado |
 | status | `confirmed` \| `cancelled` | Estado da reserva |
 | notes | string | Observações opcionais |
 | createdBy | uid | Preenchido automaticamente na criação |
-| linkedVisitorIds | string[] | IDs de visitantes tipo `reservation` |
+| linkedVisitorIds | string[] | IDs de visitantes vinculados |
+
+Respostas enriquecidas com `createdByName`, `createdByEmail`, `createdByDisplay`.
 
 ### RN-RES-02 — Criação
 
 - Requer `reservations:manage`.
-- `createdBy` = uid do usuário autenticado (não pode ser informado pelo cliente para outro usuário).
+- Reservas confirmadas validam **disponibilidade do slot** (`assertSlotAvailable`).
+- `createdBy` = uid do usuário autenticado.
 
 ### RN-RES-03 — Ownership (alteração e exclusão)
 
-Morador com apenas `reservations:manage`:
+- Morador com `reservations:manage`: edita/exclui somente onde `createdBy === uid`.
+- Admin com `reservations:manage_all`: edita/exclui qualquer reserva.
+- Tentativa não autorizada → **403 Forbidden** (security scope).
 
-- Pode **editar** e **excluir** somente reservas onde `createdBy === seu uid`.
-- Tentativa sobre reserva de terceiro → **403 Forbidden**.
-
-Usuário com `reservations:manage_all` (administrador):
-
-- Pode editar e excluir **qualquer** reserva.
-
-### RN-RES-04 — Leitura
+### RN-RES-04 — Leitura (escopo)
 
 - Requer `reservations:read`.
-- No MVP, quem possui leitura vê **todas** as reservas (não há filtro por morador na API).
+- **Morador:** vê apenas **próprias** reservas (filtro `createdBy` no scope).
+- **Porteiro:** vê **todas** as reservas (`RESERVATIONS_READ` sem `RESERVATIONS_MANAGE`).
+- **Admin:** vê todas (`RESERVATIONS_MANAGE_ALL`).
 
 ### RN-RES-05 — Filtros
 
 - `?status=confirmed|cancelled`
-- `?date=YYYY-MM-DD` (intervalo do dia inteiro)
+- `?date=YYYY-MM-DD`
+- `?search=` — busca em espaço, solicitante, observações (servidor)
 
 ### RN-RES-06 — Conflito de horário
 
-- **Não implementado no MVP.** Duas reservas no mesmo espaço/horário podem coexistir.
+- **Implementado.** Slots definidos por espaço em `reservation-schedule.ts`.
+- API `GET /reservations/available-slots` retorna todos os blocos com flag `available`.
+- Criação e alteração de horário/espaço revalidam conflito; alteração só de `linkedVisitorIds` **não** revalida slot.
 
 ### RN-RES-07 — Vínculo com visitantes
 
-- Morador pode associar visitantes (`visitType: reservation`) à reserva via `linkedVisitorIds`.
-- Vínculo é **referência unidirecional** (reserva → visitantes); visitante não armazena `reservationId`.
-- Regra de integridade (visitante deve existir) **não é validada** no backend no MVP.
+- Vínculo via `POST /reservations/:id/visitors/:visitorId` e desvínculo via `DELETE` (requer `visitors:manage`).
+- Autorização de vínculo: dono da reserva, admin (`manage_all`) ou porteiro com `visitors:manage` + leitura geral de reservas.
+- Referência unidirecional: reserva → `linkedVisitorIds[]`.
+- Modal na UI: selecionar existente ou cadastrar novo + vincular.
 
 ### RN-RES-08 — Cancelamento
 
-- Status `cancelled` preserva histórico; reserva não é removida do banco.
+- Status `cancelled` preserva histórico; vínculos podem ser limpos na UI ao cancelar.
 
 ---
 
 ## 6. Visitantes
 
-### RN-VIS-01 — Tipos de visita
+### RN-VIS-01 a RN-VIS-04
 
-| visitType | Uso |
-|-----------|-----|
-| `apartment` | Visita a unidade (parente, entregador, prestador) |
-| `reservation` | Convidado de evento com reserva de área comum |
+(Tipos `apartment` / `reservation`; workflow waiting → authorized/denied → exited; criação com `visitors:manage`; workflow com `visitors:workflow`.)
 
-### RN-VIS-02 — Status e workflow
-
-```mermaid
-stateDiagram-v2
-  [*] --> waiting: Cadastro
-  waiting --> authorized: Porteiro autoriza
-  waiting --> denied: Porteiro nega
-  authorized --> exited: Porteiro registra saída
-  denied --> [*]
-  exited --> [*]
-```
-
-| Status | Significado |
-|--------|-------------|
-| `waiting` | Aguardando autorização na portaria |
-| `authorized` | Liberado para entrar |
-| `denied` | Entrada negada |
-| `exited` | Saída registrada |
-
-### RN-VIS-03 — Criação
+### RN-VIS-05 — Edição
 
 - Requer `visitors:manage`.
-- Status padrão: `waiting` (se não informado).
-- `authorizedBy` = uid de quem cadastrou (morador ou porteiro).
-
-### RN-VIS-04 — Workflow (portaria)
-
-- Transições de status via `PATCH /visitors/:id/status`.
-- Requer `visitors:workflow`.
-- Ao mudar status, `authorizedBy` = uid do porteiro (ou operador) que executou a ação.
-- Ao registrar saída (`exited`), pode informar `exitTime`.
-
-### RN-VIS-05 — Edição de dados cadastrais
-
-- Requer `visitors:manage`.
-- Não exige ownership: porteiro e morador com permissão editam qualquer visitante listado.
+- Escopo por `authorizedBy`: morador altera visitantes que autorizou; porteiro com `visitors:workflow` tem bypass.
 
 ### RN-VIS-06 — Filtros
 
-- `?status=`
-- `?visitType=apartment|reservation`
-- `?date=YYYY-MM-DD`
+- `?status=`, `?visitType=`, `?date=`, `?search=` (servidor)
 
 ### RN-VIS-07 — Exclusão
 
-- Requer `visitors:manage`.
-- Remove documento; **não remove** referências em `linkedVisitorIds` de reservas.
+- Remove documento; desvincula de reservas associadas via API de unlink.
 
 ---
 
 ## 7. Mural de avisos
 
-### RN-MUR-01 — Categorias
+### RN-MUR-01 a RN-MUR-06
 
-| category | Exemplo |
-|----------|---------|
-| `general` | Horário da piscina |
-| `event` | Assembleia |
-| `maintenance` | Elevador indisponível |
-| `important` | Comunicados urgentes |
-
-### RN-MUR-02 — Criação
-
-- Requer `announcements:manage`.
-- `author` = uid do criador (automático).
-- `date` = data/hora da publicação (automático).
-- `likes` e `comments` iniciam em 0 (contadores estáticos no MVP).
-
-### RN-MUR-03 — Flags
-
-- `isPinned` — destaque no topo da listagem (UI).
-- `isImportant` — destaque visual de urgência (UI).
-
-### RN-MUR-04 — Edição e exclusão
-
-- Requer `announcements:manage`.
-- **Sem ownership**: administrador edita qualquer aviso.
-
-### RN-MUR-05 — Leitura
-
-- Requer `announcements:read`.
-- Filtro opcional: `?category=`
-
-### RN-MUR-06 — Interação social
-
-- Likes e comentários são **campos numéricos** no MVP; não há API de incremento nem threads reais.
+(Categorias, flags, CRUD com `announcements:manage`, leitura com `announcements:read`, filtros `category`, `search`, `isPinned`, `isImportant`; likes/comentários estáticos.)
 
 ---
 
-## 8. Informações do condomínio
+## 8. Relatório operacional
 
-### RN-INF-01 — Conteúdo estático
+### RN-REP-01 — Acesso
 
-- Tela exibe regras e contatos **hardcoded** no frontend.
-- Funções `information:read` e `information:edit` controlam apenas visibilidade/edição na UI.
+- Requer `reports:read`.
+- Disponível no menu **Relatório** e no painel (**Relatório Operacional**).
 
-### RN-INF-02 — Persistência
+### RN-REP-02 — Escopo de dados
 
-- **Não há backend** para Informações no MVP.
-- Edições na UI (se habilitadas) **não são salvas**.
+- Respeita security scopes de reservas e visitantes.
+- Morador: apenas registros próprios/autorizados por ele.
+- Porteiro/admin: visão ampliada conforme perfil.
+
+### RN-REP-03 — Joins
+
+| Join | Descrição |
+|------|-----------|
+| Reserva → Morador | `createdBy` → usuário + perfil |
+| Reserva → Visitantes | `linkedVisitorIds[]` |
+| Visitante → Autorizador | `authorizedBy` → usuário + perfil |
+| Visitante → Reserva | Lookup reverso + solicitante da reserva |
+
+### RN-REP-04 — Filtros
+
+- Período (`from`, `to`), status de reserva/visitante, espaço, tipo de visita, busca textual.
+
+### RN-REP-05 — Exportação
+
+- CSV de reservas e CSV de visitantes gerados no cliente a partir dos dados da API.
 
 ---
 
-## 9. Regras transversais de UI (frontend)
+## 9. Informações do condomínio
+
+### RN-INF-01 / RN-INF-02
+
+- Conteúdo estático no frontend; sem API no MVP.
+
+---
+
+## 10. Regras transversais de UI
 
 | ID | Regra |
 |----|-------|
-| RN-UI-01 | Sidebar oculta itens sem permissão correspondente. |
-| RN-UI-02 | Acesso direto a página sem permissão → redireciona ao dashboard. |
-| RN-UI-03 | Flags de permissão derivadas de `getUserPermissions(functions)` — espelho do catálogo backend. |
-| RN-UI-04 | `RESERVATIONS_MANAGE_ALL` é checado no backend; frontend usa bypass por perfil admin em algumas ações de reserva. |
+| RN-UI-01 | Sidebar oculta itens sem permissão. |
+| RN-UI-02 | `RequirePermission` redireciona ao dashboard se rota não permitida. |
+| RN-UI-03 | Flags derivadas de `getUserPermissions(functions)`. |
+| RN-UI-04 | Navegação por URL (`react-router-dom`); estado de modal pode vir de `location.state`. |
+| RN-UI-05 | Listagens principais carregam dados filtrados via API (debounce de busca ~300 ms). |
 
 ---
 
-## 10. Dados de demonstração (seed)
-
-O script `npm run seed` popula cenários que exercitam as regras acima:
+## 11. Dados de demonstração (seed)
 
 | Cenário | ID demo | Regra exercitada |
 |---------|---------|------------------|
 | Visitante aguardando | `demo-visitor-waiting` | Workflow portaria |
-| Visitante autorizado / saída | `demo-visitor-authorized`, `demo-visitor-exited` | Estados finais |
 | Festa com convidados | `demo-reservation-party` + 2 visitantes | `linkedVisitorIds` |
 | Reserva cancelada | `demo-reservation-cancelled` | Status `cancelled` |
-| Aviso fixado | `demo-announcement-maintenance` | `isPinned`, `isImportant` |
+| Churrasqueira livre | `demo-reservation-churrasqueira` | Vincular novo convidado |
 
-Detalhes operacionais: [SETUP_TESTE.md](./SETUP_TESTE.md).
+Detalhes: [SETUP_TESTE.md](./SETUP_TESTE.md).
 
 ---
 
-## 11. Matriz resumida — perfis seed vs domínios
+## 12. Matriz resumida — perfis seed vs domínios
 
 | Domínio | Admin | Porteiro | Morador |
 |---------|:-----:|:--------:|:-------:|
-| Reservas — ler | ✓ | ✓ | ✓ |
+| Reservas — ler (escopo) | Todas | Todas | Próprias |
 | Reservas — gerenciar próprias | ✓ | — | ✓ |
 | Reservas — gerenciar todas | ✓ | — | — |
-| Visitantes — ler | ✓ | ✓ | ✓ |
-| Visitantes — CRUD | ✓ | ✓ | ✓ |
+| Visitantes — ler | ✓ | ✓ | Próprios* |
+| Visitantes — CRUD + vínculo | ✓ | ✓ | ✓ |
 | Visitantes — workflow | ✓ | ✓ | — |
 | Avisos — ler | ✓ | ✓ | ✓ |
 | Avisos — gerenciar | ✓ | — | — |
 | Informações — ler | ✓ | — | ✓ |
+| Relatórios | ✓ | ✓ | ✓** |
 | Usuários — ler/gerenciar | ✓ | ✓ | — |
 | Perfis — ler/gerenciar | ✓ | — | — |
 
+\* Escopo por `authorizedBy`  
+\*\* Dados filtrados pelo security scope
+
 ---
 
-## 12. Referências
+## 13. Referências
 
-- [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md) — implementação
-- [CASOS_DE_USO.md](./CASOS_DE_USO.md) — fluxos por persona
-- [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md) — escopo e personas
+- [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md)
+- [CASOS_DE_USO.md](./CASOS_DE_USO.md)
+- [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md)

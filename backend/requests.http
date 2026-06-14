@@ -125,7 +125,15 @@ GET {{baseUrl}}/reservations/available-slots?space=Sal%C3%A3o%20de%20Festas&date
 Authorization: Bearer {{token}}
 
 ### Listar / filtrar reservas
-GET {{baseUrl}}/reservations?status=confirmed&date=2026-07-20
+GET {{baseUrl}}/reservations?status=confirmed&date=2026-07-20&search=salao
+Authorization: Bearer {{token}}
+
+### Vincular visitante a reserva (requer VISITORS_MANAGE)
+POST {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
+Authorization: Bearer {{token}}
+
+### Desvincular visitante da reserva
+DELETE {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
 Authorization: Bearer {{token}}
 
 ### Buscar / atualizar / excluir
@@ -171,7 +179,7 @@ Content-Type: application/json
 }
 
 ### Listar / filtrar
-GET {{baseUrl}}/visitors?status=waiting
+GET {{baseUrl}}/visitors?status=waiting&search=ana
 Authorization: Bearer {{token}}
 
 ### Workflow de status (autorizar/negar/saida) - requer VISITORS_WORKFLOW
@@ -222,4 +230,16 @@ Content-Type: application/json
 }
 
 DELETE {{baseUrl}}/announcements/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+
+###############################################################################
+# RELATORIOS (/reports) - requer REPORTS_READ
+###############################################################################
+
+### Relatorio operacional (joins reservas + visitantes + usuarios + perfis)
+GET {{baseUrl}}/reports/operational?from=2026-01-01&to=2026-12-31
+Authorization: Bearer {{token}}
+
+### Relatorio com filtros
+GET {{baseUrl}}/reports/operational?from=2026-06-01&to=2026-06-30&reservationStatus=confirmed&space=Churrasqueira%202&search=maria
 Authorization: Bearer {{token}}

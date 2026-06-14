@@ -49,12 +49,14 @@ flowchart LR
     UC2[Cadastrar visitante]
     UC3[Vincular convidados à reserva]
     UC4[Consultar avisos]
+    UC13[Consultar relatório]
   end
 
   subgraph Porteiro
     UC5[Autorizar visitante]
     UC6[Registrar saída]
     UC7[Consultar reservas do dia]
+    UC14[Relatório operacional]
   end
 
   subgraph Admin
@@ -62,6 +64,7 @@ flowchart LR
     UC9[Gerenciar usuários]
     UC10[Gerenciar perfis RBAC]
     UC11[Editar qualquer reserva]
+    UC14
   end
 ```
 
@@ -74,29 +77,9 @@ flowchart LR
 | Campo | Valor |
 |-------|-------|
 | **Ator** | Qualquer usuário cadastrado |
-| **Pré-condição** | Conta Firebase existente; e-mail/senha habilitados no console |
-| **Fluxo principal** | 1. Usuário informa e-mail e senha → 2. Firebase valida → 3. Frontend obtém ID token → 4. Chama `GET /auth/me` → 5. Exibe dashboard conforme permissões |
-| **Pós-condição** | Sessão ativa; menu filtrado por perfil |
-| **Fluxos alternativos** | Credenciais inválidas → mensagem de erro; Firebase não configurado → `CONFIGURATION_NOT_FOUND` |
-
-```mermaid
-sequenceDiagram
-  actor U as Usuário
-  participant L as Login (React)
-  participant FA as Firebase Auth
-  participant API as API NestJS
-  participant FS as Firestore
-
-  U->>L: email + senha
-  L->>FA: signInWithEmailAndPassword
-  FA-->>L: ID token (claim profileId)
-  L->>API: GET /auth/me (Bearer)
-  API->>FA: verifyIdToken
-  API->>FS: users/{uid}, profiles/{profileId}
-  FS-->>API: user + profile
-  API-->>L: { user, profile }
-  L-->>U: Dashboard
-```
+| **Pré-condição** | Conta Firebase existente |
+| **Fluxo principal** | 1. E-mail e senha → 2. Firebase valida → 3. `GET /auth/me` → 4. Dashboard com menu filtrado |
+| **Pós-condição** | Sessão ativa; funções carregadas do perfil |
 
 ---
 
@@ -105,25 +88,20 @@ sequenceDiagram
 | Campo | Valor |
 |-------|-------|
 | **Ator** | Morador |
-| **Pré-condição** | Logado; possui `reservations:manage` |
-| **Fluxo principal** | 1. Acessa Reservas → 2. Preenche espaço, data, horário → 3. Confirma → 4. API cria com `createdBy = uid` → 5. Reserva aparece na lista |
-| **Regras** | RN-RES-02, RN-RES-03 |
-| **Exceção** | Sem função → 403 na API; página oculta na UI |
-
-**Dado demo:** morador@vyzin.com cria nova reserva; seed já inclui churrasqueira e salão de festas.
+| **Pré-condição** | `reservations:manage` |
+| **Fluxo principal** | 1. Reservas → Nova → 2. Escolhe espaço e data → 3. Seleciona slot disponível → 4. Confirma → API valida conflito |
+| **Regras** | RN-RES-02, RN-RES-06 |
 
 ---
 
-### UC-03 — Morador cadastra visitante aguardando portaria
+### UC-03 — Morador cadastra visitante
 
 | Campo | Valor |
 |-------|-------|
 | **Ator** | Morador |
 | **Pré-condição** | `visitors:manage` |
-| **Fluxo principal** | 1. Acessa Visitantes → 2. Cadastra visitante tipo `apartment` → 3. Status inicial `waiting` → 4. Porteiro vê na fila |
-| **Regras** | RN-VIS-03 |
-
-**Dado demo:** `demo-visitor-waiting` — Ana Paula Santos, aguardando autorização.
+| **Fluxo principal** | Cadastra visitante `apartment` ou `reservation`; status inicial `waiting` (ou `authorized` se cadastro via modal de reserva) |
+| **Dado demo** | `demo-visitor-waiting` — Ana Paula Santos |
 
 ---
 
@@ -132,286 +110,191 @@ sequenceDiagram
 | Campo | Valor |
 |-------|-------|
 | **Ator** | Porteiro |
-| **Pré-condição** | `visitors:workflow`; visitante em `waiting` |
-| **Fluxo principal** | 1. Localiza visitante → 2. Ação "Autorizar" → 3. `PATCH /visitors/:id/status` com `authorized` → 4. `authorizedBy` = uid do porteiro |
-| **Fluxo alternativo** | Negar → status `denied` |
-| **Regras** | RN-VIS-04 |
-
-```mermaid
-stateDiagram-v2
-  direction LR
-  waiting --> authorized: UC-04 Autorizar
-  waiting --> denied: UC-04 Negar
-  authorized --> exited: UC-05 Registrar saída
-```
-
-**Teste manual:** login porteiro@vyzin.com → autorizar Ana Paula (`demo-visitor-waiting`).
+| **Pré-condição** | `visitors:workflow` |
+| **Fluxo principal** | `PATCH /visitors/:id/status` → `authorized` |
+| **Teste** | porteiro@vyzin.com → autorizar Ana Paula |
 
 ---
 
-### UC-05 — Porteiro registra saída de visitante
+### UC-05 — Porteiro registra saída
 
 | Campo | Valor |
 |-------|-------|
 | **Ator** | Porteiro |
-| **Pré-condição** | Visitante `authorized`; `visitors:workflow` |
-| **Fluxo principal** | 1. Seleciona visitante → 2. Registra saída → 3. Status `exited`, `exitTime` preenchido |
-| **Regras** | RN-VIS-04 |
-
-**Dado demo:** Carlos Oliveira (`demo-visitor-authorized`) — candidato a saída após autorização.
+| **Pré-condição** | Visitante `authorized` |
+| **Fluxo principal** | Status `exited` + `exitTime` |
 
 ---
 
-### UC-06 — Morador vincula convidados a reserva de festa
+### UC-06 — Morador vincula convidados a reserva
 
 | Campo | Valor |
 |-------|-------|
-| **Ator** | Morador |
-| **Pré-condição** | Reserva confirmada; visitantes tipo `reservation` cadastrados |
-| **Fluxo principal** | 1. Cria/edita reserva do salão → 2. Seleciona convidados → 3. Salva `linkedVisitorIds[]` |
+| **Ator** | Morador (ou porteiro com permissão) |
+| **Pré-condição** | Reserva confirmada; `visitors:manage` |
+| **Fluxo principal** | 1. Abre reserva → Adicionar Visitante → 2a. Seleciona existente **ou** 2b. Cadastra novo → 3. `POST /reservations/:id/visitors/:visitorId` |
 | **Regras** | RN-RES-07 |
 
 ```mermaid
 erDiagram
-  RESERVATION ||--o{ VISITOR : "linkedVisitorIds"
+  USER ||--o{ RESERVATION : creates
+  USER ||--o{ VISITOR : authorizes
+  RESERVATION ||--o{ VISITOR : linkedVisitorIds
+  USER ||--|| PROFILE : profileId
   RESERVATION {
     string id
-    string space
     string createdBy
     string[] linkedVisitorIds
   }
   VISITOR {
     string id
+    string authorizedBy
     string visitType
-    string status
   }
 ```
 
-**Dado demo:** `demo-reservation-party` vincula Fernanda Lima e Lucas Mendes.
+**Dado demo:** `demo-reservation-party` + Fernanda Lima + Lucas Mendes.
 
 ---
 
 ### UC-07 — Morador cancela própria reserva
 
-| Campo | Valor |
-|-------|-------|
-| **Ator** | Morador |
-| **Pré-condição** | `reservations:manage`; `createdBy === uid` |
-| **Fluxo principal** | 1. Edita reserva → 2. Altera status para `cancelled` ou exclui registro |
-| **Fluxo alternativo** | Tentar editar reserva de outro morador → 403 |
-| **Regras** | RN-RES-03, RN-RES-08 |
-
-**Dado demo:** `demo-reservation-cancelled` — quadra esportiva cancelada por chuva.
+Altera status para `cancelled` ou exclui; ownership validado no scope.
 
 ---
 
-### UC-08 — Administrador publica aviso fixado
+### UC-08 — Administrador publica aviso
 
-| Campo | Valor |
-|-------|-------|
-| **Ator** | Administrador |
-| **Pré-condição** | `announcements:manage` |
-| **Fluxo principal** | 1. Acessa Mural → 2. Novo aviso → 3. Define categoria, `isPinned`, `isImportant` → 4. Publica |
-| **Regras** | RN-MUR-02, RN-MUR-03 |
-
-**Dado demo:** manutenção do elevador (`demo-announcement-maintenance`).
+CRUD no Mural com `announcements:manage`.
 
 ---
 
 ### UC-09 — Administrador gerencia usuários
 
-| Campo | Valor |
-|-------|-------|
-| **Ator** | Administrador (ou porteiro com `users:manage`) |
-| **Pré-condição** | `users:manage` |
-| **Fluxo principal** | 1. Acessa Usuários → 2. Cria usuário com perfil → 3. Backend provisiona Firebase Auth + Firestore + claim |
-| **Fluxo alternativo** | E-mail duplicado → 409 Conflict |
-| **Regras** | RN-USER-01 a RN-USER-04 |
+Tela **Segurança → Usuários**; provisiona Firebase Auth + Firestore.
 
 ---
 
 ### UC-10 — Administrador configura perfil RBAC
 
-| Campo | Valor |
-|-------|-------|
-| **Ator** | Administrador |
-| **Pré-condição** | `profiles:manage` |
-| **Fluxo principal** | 1. Acessa Perfis → 2. Cria/edita perfil → 3. Marca funções desejadas → 4. Usuários com esse perfil passam a ter novas permissões no próximo login |
-| **Regras** | RN-RBAC-04, RN-RBAC-05, RN-RBAC-06 |
-| **Nota MVP** | Componente `ProfileManagement` referenciado no Layout; migrar do protótipo `Vyzin 1.0/` se ausente no frontend ativo |
+Tela **Segurança → Perfis** (`ProfileManagement.tsx`); marca funções incluindo `reports:read`.
 
 ---
 
 ### UC-11 — Administrador edita reserva de qualquer morador
 
-| Campo | Valor |
-|-------|-------|
-| **Ator** | Administrador |
-| **Pré-condição** | `reservations:manage_all` |
-| **Fluxo principal** | 1. Lista reservas → 2. Edita reserva onde `createdBy ≠ admin` → 3. API permite via `assertCanManage` |
-| **Regras** | RN-RES-03 |
-
-**Dado demo:** `demo-reservation-admin` — sala de reuniões reservada pelo síndico.
+Requer `reservations:manage_all`.
 
 ---
 
 ### UC-12 — Consultar avisos e informações
 
+Rotas `/mural` e `/informacoes`.
+
+---
+
+### UC-13 — Consultar relatório operacional
+
 | Campo | Valor |
 |-------|-------|
-| **Ator** | Morador / Porteiro / Admin |
-| **Pré-condição** | `announcements:read` e/ou `information:read` |
-| **Fluxo principal** | 1. Acessa Mural ou Informações → 2. Visualiza conteúdo |
-| **Regras** | RN-MUR-05, RN-INF-01 |
+| **Ator** | Admin, Porteiro ou Morador |
+| **Pré-condição** | `reports:read` |
+| **Fluxo principal** | 1. Painel → Relatório Operacional **ou** menu Relatório → 2. Ajusta filtros (período, status, busca) → 3. Consulta abas Reservas/Visitantes → 4. Opcional: export CSV |
+| **Regras** | RN-REP-01 a RN-REP-05 |
+
+```mermaid
+sequenceDiagram
+  actor U as Usuário
+  participant FE as RelatorioOperacional
+  participant API as ReportsService
+  participant FS as Firestore
+
+  U->>FE: Abre /relatorio
+  FE->>API: GET /reports/operational?from&to&search
+  API->>FS: reservas + visitantes (scoped)
+  API->>FS: users + profiles (join)
+  API-->>FE: summary + rows
+  FE-->>U: Tabelas + export CSV
+```
 
 ---
 
-## 5. Fluxo end-to-end — visita ao apartamento
+## 5. Fluxo end-to-end — festa no salão
 
 ```mermaid
 sequenceDiagram
   actor M as Morador
-  actor P as Porteiro
   participant FE as Frontend
   participant API as Backend
-  participant DB as Firestore
 
-  M->>FE: Cadastra visitante (apartment)
+  M->>FE: Cadastrar convidado (aba Novo)
   FE->>API: POST /visitors
-  API->>DB: status=waiting
-  DB-->>API: ok
-  API-->>FE: id
+  API-->>FE: visitorId
 
-  P->>FE: Lista visitantes waiting
-  FE->>API: GET /visitors?status=waiting
-  API-->>FE: lista
+  M->>FE: Cadastrar e Vincular
+  FE->>API: POST /reservations/:id/visitors/:visitorId
+  API-->>FE: reserva atualizada
 
-  P->>FE: Autoriza
-  FE->>API: PATCH /visitors/:id/status
-  API->>DB: status=authorized, authorizedBy=porteiro
-  API-->>FE: ok
-
-  Note over P,DB: Visitante entra no condomínio
-
-  P->>FE: Registra saída
-  FE->>API: PATCH status=exited
-  API->>DB: exitTime
+  M->>FE: Abre relatório
+  FE->>API: GET /reports/operational
+  API-->>FE: reserva + convidados + morador (join)
 ```
 
 ---
 
-## 6. Fluxo end-to-end — festa no salão
-
-```mermaid
-sequenceDiagram
-  actor M as Morador
-  participant FE as Frontend
-  participant API as Backend
-  participant DB as Firestore
-
-  M->>FE: Cadastra convidados (reservation)
-  FE->>API: POST /visitors (x2)
-  API->>DB: visitantes
-
-  M->>FE: Reserva salão + vincula IDs
-  FE->>API: POST /reservations
-  Note right of API: linkedVisitorIds: [id1, id2]
-  API->>DB: reserva confirmada
-
-  M->>FE: Consulta reserva
-  FE->>API: GET /reservations/:id
-  API-->>FE: reserva + IDs
-  FE->>API: GET /visitors (filtro local)
-  FE-->>M: Exibe convidados vinculados
-```
-
----
-
-## 7. Diagrama de componentes (simplificado)
+## 6. Diagrama de componentes (frontend)
 
 ```mermaid
 flowchart TB
   subgraph Frontend
-    Pages[Pages React]
+    Router[AppRouter + RequirePermission]
+    Pages[pages/*]
+    Modules[modules/*]
     Ctx[AuthContext / CondoDataContext]
-    Repo[Repositories HTTP]
-    Infra[firebaseClient + apiClient]
+    Repo[Repositories]
   end
 
   subgraph Backend
-    Guards[FirebaseAuthGuard + FunctionGuard]
+    Guards[Guards]
     Ctrl[Controllers]
-    Svc[Services]
-    FB[FirebaseService]
+    Svc[Services + Scopes]
   end
 
-  subgraph Firebase
-    Auth[Authentication]
-    FS[(Firestore)]
-  end
-
-  Pages --> Ctx
-  Ctx --> Repo
-  Repo --> Infra
-  Infra --> Auth
-  Infra --> Ctrl
-  Ctrl --> Guards
-  Guards --> Ctrl
-  Ctrl --> Svc
-  Svc --> FB
-  FB --> FS
-  Guards --> Auth
+  Pages --> Modules --> Ctx --> Repo
+  Router --> Pages
+  Repo --> Ctrl
+  Ctrl --> Guards --> Svc
 ```
 
 ---
 
-## 8. Diagrama de deployment (desenvolvimento)
-
-```mermaid
-flowchart LR
-  Browser[Navegador :3001]
-  Vite[Vite dev server]
-  Nest[NestJS :3000]
-  GCP[Firebase vyzin-app]
-
-  Browser --> Vite
-  Browser --> GCP
-  Vite --> Browser
-  Browser --> Nest
-  Nest --> GCP
-```
-
----
-
-## 9. Roteiro de testes por persona
+## 7. Roteiro de testes por persona
 
 ### Morador (morador@vyzin.com)
 
-1. Login → dashboard com atalhos
-2. Reservas → ver churrasqueira e salão demo
-3. Criar nova reserva
-4. Visitantes → cadastrar visitante `apartment`
-5. Mural → ler avisos (sem botão criar)
-6. Informações → visualizar regras
-7. Tentar acessar Usuários → menu oculto / redirect
+1. Login → dashboard (logout/login se menu Relatório não aparecer)
+2. Reservas → criar reserva com slot disponível
+3. Reserva churrasqueira → Adicionar Visitante → Cadastrar e Vincular
+4. Relatório → filtrar últimos 30 dias → ver joins
+5. Mural → leitura; Informações → regras
 
 ### Porteiro (porteiro@vyzin.com)
 
-1. Visitantes → filtrar `waiting` → autorizar Ana Paula
-2. Visitantes → registrar saída de Carlos (se autorizado)
-3. Reservas → somente leitura
-4. Usuários → listar / cadastrar (perfil seed permite)
+1. Visitantes → autorizar Ana Paula (`waiting`)
+2. Reservas → leitura de todas as reservas
+3. Relatório → visão ampliada
+4. Usuários → listar/cadastrar
 
 ### Administrador (admin@vyzin.com)
 
-1. Mural → criar/editar/excluir aviso
-2. Reservas → editar reserva do morador (`demo-reservation-party`)
-3. Usuários → CRUD
-4. Perfis → CRUD funções (quando tela disponível)
+1. Mural → CRUD aviso
+2. Reservas → editar reserva do morador
+3. Segurança → Usuários e Perfis
+4. Relatório → export CSV
 
 ---
 
-## 10. Referências
+## 8. Referências
 
 - [REGRAS_DE_NEGOCIO.md](./REGRAS_DE_NEGOCIO.md)
 - [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md)
