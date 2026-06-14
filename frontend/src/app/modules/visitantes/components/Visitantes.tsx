@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card } from '@/app/components/ui/card'
 import { Button } from '@/app/components/ui/button'
 import { Badge } from '@/app/components/ui/badge'
@@ -45,6 +45,9 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import { useCondoData, Visitor, VisitType } from '@/app/contexts/CondoDataContext'
+import { reservationRepository } from '@/app/data/reservationRepository'
+import { visitorRepository } from '@/app/data/visitorRepository'
+import { Reservation } from '@/app/domain/reservation'
 import { useAuth } from '@/app/contexts/AuthContext'
 import { getUserPermissions } from '@/app/utils/permissions'
 import { display } from '@/app/utils/displayLabels'
@@ -192,14 +195,23 @@ export function Visitantes({
   onCloseNewModal?: () => void
 }) {
   const {
-    visitors,
-    reservations,
     addVisitor,
     updateVisitor,
     deleteVisitor,
     linkVisitorToReservation,
     getReservationForVisitor,
   } = useCondoData()
+
+  const [visitors, setVisitors] = useState<Visitor[]>([])
+  const [activeReservations, setActiveReservations] = useState<Reservation[]>(
+    [],
+  )
+  const [listLoading, setListLoading] = useState(true)
+  const [stats, setStats] = useState({
+    total: 0,
+    authorized: 0,
+    waiting: 0,
+  })
 
   const { functions } = useAuth()
   const permissions = getUserPermissions(functions)
@@ -243,13 +255,51 @@ export function Visitantes({
     validUntil: '',
   })
 
-  // ── Filtered list ──
-  const filtered = visitors.filter(
-    (v) =>
-      v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      v.cpf.includes(searchQuery) ||
-      v.purpose.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  const loadVisitors = useCallback(async () => {
+    setListLoading(true)
+    try {
+      const search = searchQuery.trim() || undefined
+      const data = await visitorRepository.list({ search })
+      setVisitors(data)
+    } finally {
+      setListLoading(false)
+    }
+  }, [searchQuery])
+
+  const loadStats = useCallback(async () => {
+    const search = searchQuery.trim() || undefined
+    const [total, authorized, waiting] = await Promise.all([
+      visitorRepository.list({ search }),
+      visitorRepository.list({ search, status: 'authorized' }),
+      visitorRepository.list({ search, status: 'waiting' }),
+    ])
+    setStats({
+      total: total.length,
+      authorized: authorized.length,
+      waiting: waiting.length,
+    })
+  }, [searchQuery])
+
+  const loadActiveReservations = useCallback(async () => {
+    const confirmed = await reservationRepository.list({ status: 'confirmed' })
+    setActiveReservations(confirmed)
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadVisitors()
+      void loadStats()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [loadVisitors, loadStats])
+
+  useEffect(() => {
+    void loadActiveReservations()
+  }, [loadActiveReservations])
+
+  const refreshList = useCallback(async () => {
+    await Promise.all([loadVisitors(), loadStats(), loadActiveReservations()])
+  }, [loadVisitors, loadStats, loadActiveReservations])
 
   // ── Visitor CRUD ──
   function openCreate() {
@@ -307,28 +357,33 @@ export function Visitantes({
       }
     }
     setIsDialogOpen(false)
+    await refreshList()
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (deletingId) {
-      deleteVisitor(deletingId)
+      await deleteVisitor(deletingId)
       setDeletingId(null)
       setIsDeleteOpen(false)
+      await refreshList()
     }
   }
 
-  function authorizeVisitor(id: string) {
-    updateVisitor(id, { status: 'authorized', authorizedBy: 'Portaria' })
+  async function authorizeVisitor(id: string) {
+    await updateVisitor(id, { status: 'authorized', authorizedBy: 'Portaria' })
+    await refreshList()
   }
-  function denyVisitor(id: string) {
-    updateVisitor(id, { status: 'denied' })
+  async function denyVisitor(id: string) {
+    await updateVisitor(id, { status: 'denied' })
+    await refreshList()
   }
-  function registerExit(id: string) {
+  async function registerExit(id: string) {
     const now = new Date()
-    updateVisitor(id, {
+    await updateVisitor(id, {
       status: 'exited',
       exitTime: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
     })
+    await refreshList()
   }
 
   // ── Pre-auth CRUD ──
@@ -405,17 +460,17 @@ export function Visitantes({
           {[
             {
               label: 'Total hoje',
-              value: visitors.length,
+              value: stats.total,
               iconBg: 'bg-blue-500',
             },
             {
               label: 'Autorizados',
-              value: visitors.filter((v) => v.status === 'authorized').length,
+              value: stats.authorized,
               iconBg: 'bg-[#10B981]',
             },
             {
               label: 'Aguardando',
-              value: visitors.filter((v) => v.status === 'waiting').length,
+              value: stats.waiting,
               iconBg: 'bg-orange-500',
             },
             {
@@ -474,14 +529,21 @@ export function Visitantes({
               />
             </div>
 
-            {filtered.length === 0 && (
+            {listLoading && (
+              <Card className="p-12 text-center text-muted-foreground">
+                Carregando visitantes...
+              </Card>
+            )}
+
+            {!listLoading && visitors.length === 0 && (
               <Card className="p-12 text-center text-muted-foreground">
                 Nenhum visitante encontrado.
               </Card>
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {filtered.map((visitor) => {
+              {!listLoading &&
+                visitors.map((visitor) => {
                 const sc = statusConfig[visitor.status]
                 const tc = visitTypeConfig[visitor.visitType]
                 const StatusIcon = sc.Icon
@@ -803,8 +865,7 @@ export function Visitantes({
                 {form.visitType === 'reservation' && (
                   <div className="space-y-2 col-span-2">
                     <Label>{display.reservation.linkLabel}</Label>
-                    {reservations.filter((r) => r.status !== 'cancelled')
-                      .length === 0 ? (
+                    {activeReservations.length === 0 ? (
                       <p className="text-sm text-muted-foreground px-3 py-2 bg-muted/50 rounded-lg">
                         {display.reservation.noneActive}
                       </p>
@@ -819,9 +880,7 @@ export function Visitantes({
                           <SelectValue placeholder={display.reservation.selectOptional} />
                         </SelectTrigger>
                         <SelectContent>
-                          {reservations
-                            .filter((r) => r.status !== 'cancelled')
-                            .map((r) => (
+                          {activeReservations.map((r) => (
                               <SelectItem key={r.id} value={r.id}>
                                 <div className="flex flex-col">
                                   <span className="font-medium">{r.space}</span>

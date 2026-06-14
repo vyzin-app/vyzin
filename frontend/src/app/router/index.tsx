@@ -10,6 +10,7 @@ import ReservationsPage from '@/app/pages/reservations/page'
 import MuralPage from '@/app/pages/mural/page'
 import VisitantesPage from '@/app/pages/visitantes/page'
 import InformacoesPage from '@/app/pages/informacoes/page'
+import RelatorioPage from '@/app/pages/relatorio/page'
 import SegurancaUsuariosPage from '@/app/pages/seguranca/usuarios/page'
 import SegurancaPerfisPage from '@/app/pages/seguranca/perfis/page'
 
@@ -58,6 +59,14 @@ export function AppRouter() {
             element={
               <RequirePermission permission="canAccessInformation">
                 <InformacoesPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path={paths.relatorio}
+            element={
+              <RequirePermission permission="canAccessReports">
+                <RelatorioPage />
               </RequirePermission>
             }
           />

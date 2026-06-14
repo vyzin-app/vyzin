@@ -1,12 +1,21 @@
-import { Reservation } from '../domain/reservation'
+import { AvailableSlot, Reservation } from '../domain/reservation'
+import { buildQueryString } from '../infra/http/queryParams'
 import { apiClient } from '../infra/http/api'
+import { ReservationListFilter } from '../domain/listFilters'
 
 export type ReservationInput = Omit<Reservation, 'id' | 'createdBy'>
 
 export interface ReservationRepository {
-  list(): Promise<Reservation[]>
+  list(filter?: ReservationListFilter): Promise<Reservation[]>
+  getAvailableSlots(
+    space: string,
+    date: string,
+    excludeId?: string,
+  ): Promise<AvailableSlot[]>
   create(input: ReservationInput): Promise<string>
   update(id: string, input: ReservationInput): Promise<Reservation>
+  linkVisitor(reservationId: string, visitorId: string): Promise<void>
+  unlinkVisitor(reservationId: string, visitorId: string): Promise<void>
   remove(id: string): Promise<void>
 }
 
@@ -16,9 +25,25 @@ function normalize(reservation: Reservation): Reservation {
 }
 
 class HttpReservationRepository implements ReservationRepository {
-  async list(): Promise<Reservation[]> {
-    const data = await apiClient.get<Reservation[]>('/reservations')
+  async list(filter: ReservationListFilter = {}): Promise<Reservation[]> {
+    const query = buildQueryString({
+      status: filter.status,
+      date: filter.date,
+      search: filter.search,
+    })
+    const data = await apiClient.get<Reservation[]>(`/reservations${query}`)
     return data.map(normalize)
+  }
+
+  getAvailableSlots(
+    space: string,
+    date: string,
+    excludeId?: string,
+  ): Promise<AvailableSlot[]> {
+    const query = buildQueryString({ space, date, excludeId })
+    return apiClient.get<AvailableSlot[]>(
+      `/reservations/available-slots${query}`,
+    )
   }
 
   create(input: ReservationInput): Promise<string> {
@@ -31,6 +56,18 @@ class HttpReservationRepository implements ReservationRepository {
       input,
     )
     return normalize(updated)
+  }
+
+  linkVisitor(reservationId: string, visitorId: string): Promise<void> {
+    return apiClient.post<void>(
+      `/reservations/${reservationId}/visitors/${visitorId}`,
+    )
+  }
+
+  unlinkVisitor(reservationId: string, visitorId: string): Promise<void> {
+    return apiClient.del(
+      `/reservations/${reservationId}/visitors/${visitorId}`,
+    )
   }
 
   remove(id: string): Promise<void> {

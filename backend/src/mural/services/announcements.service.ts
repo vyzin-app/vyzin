@@ -1,73 +1,87 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import * as admin from 'firebase-admin';
-import { FirebaseService } from 'src/firebase/firebase.service';
+import { Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '../../auth/types/authenticated-user';
+import type { QueryFilter } from '../../persistence/interfaces/find-options.interface';
+import { RepositoryFactory } from '../../persistence/firestore/repository.factory';
+import { applyTextSearch } from '../../persistence/utils/text-search.util';
 import { AnnouncementDTO } from '../dto/announcement.dto';
 import { FilterAnnouncementsDTO } from '../dto/filter-announcements.dto';
 import { Announcement } from '../entities/announcement.entity';
-import { announcementConverter } from '../mappers/announcement.converter';
 
 @Injectable()
 export class AnnouncementsService {
-  constructor(private readonly firebaseService: FirebaseService) {}
-
-  private collection(): admin.firestore.CollectionReference<Announcement> {
-    return this.firebaseService
-      .getFirestore()
-      .collection('announcements')
-      .withConverter(announcementConverter);
-  }
+  constructor(private readonly repositoryFactory: RepositoryFactory) {}
 
   async getAnnouncements(
-    filter: FilterAnnouncementsDTO = {},
+    filter: FilterAnnouncementsDTO,
+    currentUser: AuthenticatedUser,
   ): Promise<Announcement[]> {
-    let query: admin.firestore.Query<Announcement> = this.collection();
+    const filters: QueryFilter[] = [];
 
     if (filter.category) {
-      query = query.where('category', '==', filter.category);
+      filters.push({ field: 'category', op: '==', value: filter.category });
     }
 
-    const snapshot = await query.get();
-    return snapshot.docs.map((doc) => doc.data());
+    if (filter.isPinned !== undefined) {
+      filters.push({ field: 'isPinned', op: '==', value: filter.isPinned });
+    }
+
+    if (filter.isImportant !== undefined) {
+      filters.push({
+        field: 'isImportant',
+        op: '==',
+        value: filter.isImportant,
+      });
+    }
+
+    const results = await this.repositoryFactory
+      .announcements({ user: currentUser })
+      .findMany({ filters });
+
+    return applyTextSearch(results, filter.search, [
+      (announcement) => announcement.title,
+      (announcement) => announcement.content,
+    ]);
   }
 
-  async getAnnouncementById(id: string): Promise<Announcement> {
-    const snapshot = await this.collection().doc(id).get();
-    const announcement = snapshot.data();
-    if (!announcement) {
-      throw new NotFoundException(`Announcement ${id} not found`);
-    }
-    return announcement;
+  async getAnnouncementById(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<Announcement> {
+    return this.repositoryFactory
+      .announcements({ user: currentUser })
+      .findOneOrFail(id);
   }
 
   async createAnnouncement(
     dto: AnnouncementDTO,
     currentUser: AuthenticatedUser,
   ): Promise<string> {
-    const announcementRef = this.collection().doc();
+    const announcement = await this.repositoryFactory
+      .announcements({ user: currentUser })
+      .createWithGeneratedId((id) => ({
+        id,
+        title: dto.title,
+        content: dto.content,
+        author: currentUser.uid,
+        date: new Date(),
+        category: dto.category,
+        isPinned: dto.isPinned ?? false,
+        isImportant: dto.isImportant ?? false,
+        likes: 0,
+        comments: 0,
+      }));
 
-    const announcement: Announcement = {
-      id: announcementRef.id,
-      title: dto.title,
-      content: dto.content,
-      author: currentUser.uid,
-      date: new Date(),
-      category: dto.category,
-      isPinned: dto.isPinned ?? false,
-      isImportant: dto.isImportant ?? false,
-      likes: 0,
-      comments: 0,
-    };
-
-    await announcementRef.set(announcement);
-    return announcementRef.id;
+    return announcement.id;
   }
 
   async updateAnnouncement(
     id: string,
     dto: AnnouncementDTO,
+    currentUser: AuthenticatedUser,
   ): Promise<Announcement> {
-    const existing = await this.getAnnouncementById(id);
+    const repo = this.repositoryFactory.announcements({ user: currentUser });
+    const existing = await repo.findOneOrFail(id);
+
     const announcement: Announcement = {
       ...existing,
       title: dto.title,
@@ -76,12 +90,16 @@ export class AnnouncementsService {
       isPinned: dto.isPinned ?? existing.isPinned,
       isImportant: dto.isImportant ?? existing.isImportant,
     };
-    await this.collection().doc(id).set(announcement);
-    return announcement;
+
+    return repo.save(id, announcement);
   }
 
-  async deleteAnnouncement(id: string): Promise<void> {
-    await this.getAnnouncementById(id);
-    await this.collection().doc(id).delete();
+  async deleteAnnouncement(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    await this.repositoryFactory
+      .announcements({ user: currentUser })
+      .delete(id);
   }
 }

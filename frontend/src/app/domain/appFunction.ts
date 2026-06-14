@@ -18,6 +18,7 @@ export enum AppFunction {
   USERS_MANAGE = 'users:manage',
   PROFILES_READ = 'profiles:read',
   PROFILES_MANAGE = 'profiles:manage',
+  REPORTS_READ = 'reports:read',
 }
 
 export interface FunctionDescriptor {

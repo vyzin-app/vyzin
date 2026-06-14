@@ -1,4 +1,4 @@
-import { IsDate, IsEnum, IsOptional } from 'class-validator';
+import { IsDate, IsEnum, IsOptional, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
   VisitTypeEnum,
@@ -19,4 +19,8 @@ export class FilterVisitorsDTO {
   @Type(() => Date)
   @IsDate()
   date?: Date;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
 }

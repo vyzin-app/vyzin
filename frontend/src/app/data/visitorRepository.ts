@@ -1,10 +1,12 @@
 import { Visitor, VisitorStatus } from '../domain/visitor'
+import { buildQueryString } from '../infra/http/queryParams'
 import { apiClient } from '../infra/http/api'
+import { VisitorListFilter } from '../domain/listFilters'
 
 export type VisitorInput = Omit<Visitor, 'id' | 'authorizedBy'>
 
 export interface VisitorRepository {
-  list(): Promise<Visitor[]>
+  list(filter?: VisitorListFilter): Promise<Visitor[]>
   create(input: VisitorInput): Promise<string>
   update(id: string, input: VisitorInput): Promise<Visitor>
   updateStatus(
@@ -21,12 +23,22 @@ function normalize(visitor: Visitor): Visitor {
 
 /** The backend rejects an empty email; send `undefined` instead. */
 function toBody(input: VisitorInput) {
-  return { ...input, email: input.email ? input.email : undefined }
+  return {
+    ...input,
+    phone: input.phone || '-',
+    email: input.email ? input.email : undefined,
+  }
 }
 
 class HttpVisitorRepository implements VisitorRepository {
-  async list(): Promise<Visitor[]> {
-    const data = await apiClient.get<Visitor[]>('/visitors')
+  async list(filter: VisitorListFilter = {}): Promise<Visitor[]> {
+    const query = buildQueryString({
+      status: filter.status,
+      visitType: filter.visitType,
+      date: filter.date,
+      search: filter.search,
+    })
+    const data = await apiClient.get<Visitor[]>(`/visitors${query}`)
     return data.map(normalize)
   }
 

@@ -20,6 +20,7 @@ export interface Permission {
   canManageUsers: boolean
   canAccessProfiles: boolean
   canManageProfiles: boolean
+  canAccessReports: boolean
 }
 
 export function getUserPermissions(functions: AppFunction[]): Permission {
@@ -39,5 +40,6 @@ export function getUserPermissions(functions: AppFunction[]): Permission {
     canManageUsers: has(AppFunction.USERS_MANAGE),
     canAccessProfiles: has(AppFunction.PROFILES_READ),
     canManageProfiles: has(AppFunction.PROFILES_MANAGE),
+    canAccessReports: has(AppFunction.REPORTS_READ),
   }
 }

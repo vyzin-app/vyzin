@@ -35,10 +35,12 @@ interface CondoDataContextType {
   linkVisitorToReservation: (
     visitorId: string,
     reservationId: string,
+    reservationSnapshot?: Reservation,
   ) => Promise<void>
   unlinkVisitorFromReservation: (
     visitorId: string,
     reservationId: string,
+    reservationSnapshot?: Reservation,
   ) => Promise<void>
   getLinkedVisitors: (reservationId: string) => Visitor[]
   getReservationForVisitor: (visitorId: string) => Reservation | undefined
@@ -84,7 +86,7 @@ function toReservationInput(reservation: Reservation): ReservationInput {
     endTime: reservation.endTime,
     notes: reservation.notes,
     status: reservation.status,
-    linkedVisitorIds: reservation.linkedVisitorIds,
+    linkedVisitorIds: reservation.linkedVisitorIds ?? [],
   }
 }
 
@@ -160,15 +162,7 @@ export function CondoDataProvider({ children }: { children: ReactNode }) {
       )
       await Promise.all(
         linked.map((reservation) =>
-          reservationRepository.update(
-            reservation.id,
-            toReservationInput({
-              ...reservation,
-              linkedVisitorIds: reservation.linkedVisitorIds.filter(
-                (visitorId) => visitorId !== id,
-              ),
-            }),
-          ),
+          reservationRepository.unlinkVisitor(reservation.id, id),
         ),
       )
       await refresh()
@@ -197,34 +191,22 @@ export function CondoDataProvider({ children }: { children: ReactNode }) {
       await refreshReservations()
     },
 
-    linkVisitorToReservation: async (visitorId, reservationId) => {
-      const reservation = reservations.find((item) => item.id === reservationId)
-      if (!reservation || reservation.linkedVisitorIds.includes(visitorId)) {
-        return
-      }
-      await reservationRepository.update(
-        reservationId,
-        toReservationInput({
-          ...reservation,
-          linkedVisitorIds: [...reservation.linkedVisitorIds, visitorId],
-        }),
-      )
-      await refreshReservations()
+    linkVisitorToReservation: async (
+      visitorId,
+      reservationId,
+      _reservationSnapshot,
+    ) => {
+      await reservationRepository.linkVisitor(reservationId, visitorId)
+      await refresh()
     },
 
-    unlinkVisitorFromReservation: async (visitorId, reservationId) => {
-      const reservation = reservations.find((item) => item.id === reservationId)
-      if (!reservation) return
-      await reservationRepository.update(
-        reservationId,
-        toReservationInput({
-          ...reservation,
-          linkedVisitorIds: reservation.linkedVisitorIds.filter(
-            (id) => id !== visitorId,
-          ),
-        }),
-      )
-      await refreshReservations()
+    unlinkVisitorFromReservation: async (
+      visitorId,
+      reservationId,
+      _reservationSnapshot,
+    ) => {
+      await reservationRepository.unlinkVisitor(reservationId, visitorId)
+      await refresh()
     },
 
     getLinkedVisitors: (reservationId) =>

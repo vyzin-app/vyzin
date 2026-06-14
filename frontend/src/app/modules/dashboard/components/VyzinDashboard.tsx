@@ -1,27 +1,92 @@
+import { useCallback, useEffect, useState } from 'react'
 import { Card } from '@/app/components/ui/card'
 import { Button } from '@/app/components/ui/button'
 import { Badge } from '@/app/components/ui/badge'
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/app/components/ui/dialog'
+import {
   Calendar,
   MessageSquare,
   Users,
-  Bell,
   Plus,
   Clock,
   CheckCircle,
   UserCog,
   Info,
+  Pin,
+  AlertCircle,
+  ThumbsUp,
+  MessageCircle,
+  BarChart3,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/app/contexts/AuthContext'
+import { announcementRepository } from '@/app/data/announcementRepository'
+import {
+  Announcement,
+  AnnouncementCategory,
+} from '@/app/domain/announcement'
 import { paths } from '@/app/router/paths'
 import { getUserPermissions } from '@/app/utils/permissions'
 import { display } from '@/app/utils/displayLabels'
+
+const categoryLabels: Record<AnnouncementCategory, string> = {
+  general: 'Avisos Gerais',
+  event: 'Eventos',
+  maintenance: 'Manutenção',
+  important: 'Importante',
+}
+
+function formatAnnouncementDate(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 export function VyzinDashboard() {
   const navigate = useNavigate()
   const { user, functions } = useAuth()
   const permissions = user ? getUserPermissions(functions) : null
+
+  const [recentAnnouncements, setRecentAnnouncements] = useState<
+    Announcement[]
+  >([])
+  const [selectedAnnouncement, setSelectedAnnouncement] =
+    useState<Announcement | null>(null)
+  const [announcementDetailOpen, setAnnouncementDetailOpen] = useState(false)
+
+  const loadRecentAnnouncements = useCallback(async () => {
+    if (!permissions?.canAccessNoticeBoard) {
+      setRecentAnnouncements([])
+      return
+    }
+
+    const data = await announcementRepository.list()
+    const sorted = [...data].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    )
+    setRecentAnnouncements(sorted.slice(0, 3))
+  }, [permissions?.canAccessNoticeBoard])
+
+  useEffect(() => {
+    void loadRecentAnnouncements()
+  }, [loadRecentAnnouncements])
+
+  const openAnnouncementDetail = (announcement: Announcement) => {
+    setSelectedAnnouncement(announcement)
+    setAnnouncementDetailOpen(true)
+  }
 
   const openNewReservation = () => {
     navigate(paths.reservations, { state: { openNewModal: true } })
@@ -51,59 +116,6 @@ export function VyzinDashboard() {
       date: '20 Abr 2026',
       time: '15:00 - 17:00',
       status: 'confirmed',
-    },
-  ]
-
-  const recentAnnouncements = [
-    {
-      id: 1,
-      title: 'Manutenção do Elevador',
-      excerpt:
-        'Manutenção preventiva do elevador social será realizada na próxima semana...',
-      author: 'Síndico',
-      date: 'Hoje, 09:30',
-      category: 'Manutenção',
-    },
-    {
-      id: 2,
-      title: 'Assembleia Geral',
-      excerpt:
-        'Convocação para assembleia geral ordinária no dia 25/04 às 19h...',
-      author: 'Administração',
-      date: 'Ontem, 14:15',
-      category: 'Assembleias',
-    },
-    {
-      id: 3,
-      title: 'Pintura das Áreas Comuns',
-      excerpt: 'Iniciamos a pintura da área da piscina e salão de festas...',
-      author: 'Síndico',
-      date: '08 Abr, 16:20',
-      category: 'Obras',
-    },
-  ]
-
-  const notifications = [
-    {
-      id: 1,
-      message: 'Boleto do condomínio disponível para pagamento',
-      time: '2h atrás',
-      type: 'payment',
-      unread: true,
-    },
-    {
-      id: 2,
-      message: 'Nova mensagem no grupo de moradores',
-      time: '5h atrás',
-      type: 'message',
-      unread: true,
-    },
-    {
-      id: 3,
-      message: display.reservation.confirmedMessage,
-      time: '1 dia atrás',
-      type: 'success',
-      unread: false,
     },
   ]
 
@@ -219,47 +231,143 @@ export function VyzinDashboard() {
         </div>
 
         {/* Recent Announcements */}
-        <Card className="p-8 border-l-4 border-l-primary shadow-md">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-semibold">Avisos Recentes</h3>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-primary hover:text-primary/80"
-            >
-              Ver todos
-            </Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {recentAnnouncements.map((announcement) => (
-              <div
-                key={announcement.id}
-                className="p-5 bg-gradient-to-br from-primary/5 to-transparent rounded-xl border border-primary/10 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer group"
+        {permissions?.canAccessNoticeBoard && (
+          <Card className="p-8 border-l-4 border-l-primary shadow-md">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold">Avisos Recentes</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary hover:text-primary/80"
+                onClick={() => navigate(paths.mural)}
               >
-                <div className="flex items-center gap-2 mb-3">
-                  <Badge
-                    variant="outline"
-                    className="text-xs border-primary/30 text-primary"
+                Ver todos
+              </Button>
+            </div>
+            {recentAnnouncements.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Nenhum aviso publicado ainda.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {recentAnnouncements.map((announcement) => (
+                  <div
+                    key={announcement.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openAnnouncementDetail(announcement)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        openAnnouncementDetail(announcement)
+                      }
+                    }}
+                    className="p-5 bg-gradient-to-br from-primary/5 to-transparent rounded-xl border border-primary/10 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer group"
                   >
-                    {announcement.category}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {announcement.date}
-                  </span>
-                </div>
-                <h4 className="font-semibold mb-3 text-base group-hover:text-primary transition-colors">
-                  {announcement.title}
-                </h4>
-                <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed mb-3">
-                  {announcement.excerpt}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Por {announcement.author}
-                </p>
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <Badge
+                        variant="outline"
+                        className="text-xs border-primary/30 text-primary"
+                      >
+                        {categoryLabels[announcement.category]}
+                      </Badge>
+                      {announcement.isPinned && (
+                        <Badge className="text-xs bg-primary/10 text-primary border-primary/20">
+                          <Pin className="w-3 h-3 mr-1" />
+                          Fixado
+                        </Badge>
+                      )}
+                      {announcement.isImportant && (
+                        <Badge className="text-xs bg-orange-500/10 text-orange-500 border-orange-500/20">
+                          <AlertCircle className="w-3 h-3 mr-1" />
+                          Importante
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {formatAnnouncementDate(announcement.date)}
+                      </span>
+                    </div>
+                    <h4 className="font-semibold mb-3 text-base group-hover:text-primary transition-colors">
+                      {announcement.title}
+                    </h4>
+                    <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed mb-3">
+                      {announcement.content}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Por {announcement.author}
+                    </p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </Card>
+            )}
+          </Card>
+        )}
+
+        <Dialog
+          open={announcementDetailOpen}
+          onOpenChange={setAnnouncementDetailOpen}
+        >
+          <DialogContent className="max-w-2xl">
+            {selectedAnnouncement && (
+              <>
+                <DialogHeader>
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <Badge variant="outline">
+                      {categoryLabels[selectedAnnouncement.category]}
+                    </Badge>
+                    {selectedAnnouncement.isPinned && (
+                      <Badge className="bg-primary/10 text-primary border-primary/20">
+                        <Pin className="w-3 h-3 mr-1" />
+                        Fixado
+                      </Badge>
+                    )}
+                    {selectedAnnouncement.isImportant && (
+                      <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/20">
+                        <AlertCircle className="w-3 h-3 mr-1" />
+                        Importante
+                      </Badge>
+                    )}
+                  </div>
+                  <DialogTitle className="text-xl leading-snug">
+                    {selectedAnnouncement.title}
+                  </DialogTitle>
+                  <p className="text-sm text-muted-foreground pt-1">
+                    Por {selectedAnnouncement.author} •{' '}
+                    {formatAnnouncementDate(selectedAnnouncement.date)}
+                  </p>
+                </DialogHeader>
+
+                <div className="space-y-4">
+                  <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                    {selectedAnnouncement.content}
+                  </p>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2 border-t">
+                    <span className="inline-flex items-center gap-1.5">
+                      <ThumbsUp className="w-4 h-4" />
+                      {selectedAnnouncement.likes}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <MessageCircle className="w-4 h-4" />
+                      {selectedAnnouncement.comments}
+                    </span>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setAnnouncementDetailOpen(false)}
+                  >
+                    Fechar
+                  </Button>
+                  <Button onClick={() => navigate(paths.mural)}>
+                    Ver no mural
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Quick Actions */}
         <Card className="p-6">
@@ -326,6 +434,16 @@ export function VyzinDashboard() {
                 Gerenciar Usuários
               </Button>
             )}
+            {permissions?.canAccessReports && (
+              <Button
+                variant="outline"
+                className="h-auto py-4 border-primary/30 hover:border-primary hover:bg-primary/5"
+                onClick={() => navigate(paths.relatorio)}
+              >
+                <BarChart3 className="w-5 h-5 mr-2" />
+                Relatório Operacional
+              </Button>
+            )}
           </div>
         </Card>
 
@@ -335,7 +453,11 @@ export function VyzinDashboard() {
           <Card className="lg:col-span-2 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">{display.reservation.myMany}</h3>
-              <Button variant="ghost" size="sm">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(paths.reservations)}
+              >
                 Ver todas
               </Button>
             </div>

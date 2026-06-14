@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   LogOut,
+  BarChart3,
 } from 'lucide-react'
 import { useAuth } from '@/app/contexts/AuthContext'
 import { paths } from '@/app/router/paths'
@@ -105,6 +106,14 @@ export function Sidebar() {
       icon: Users,
       description: 'Cadastro de visitas',
       requiresPermission: 'canAccessVisitors',
+    },
+    {
+      id: 'relatorio',
+      path: paths.relatorio,
+      name: 'Relatório',
+      icon: BarChart3,
+      description: 'Reservas e visitantes',
+      requiresPermission: 'canAccessReports',
     },
     {
       id: 'seguranca',

@@ -23,14 +23,20 @@ export class AnnouncementsController {
 
   @Get()
   @RequireFunction(AppFunction.ANNOUNCEMENTS_READ)
-  async getAnnouncements(@Query() filter: FilterAnnouncementsDTO) {
-    return await this.announcementsService.getAnnouncements(filter);
+  async getAnnouncements(
+    @Query() filter: FilterAnnouncementsDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.announcementsService.getAnnouncements(filter, user);
   }
 
   @Get(':id')
   @RequireFunction(AppFunction.ANNOUNCEMENTS_READ)
-  async getAnnouncement(@Param('id') id: string) {
-    return await this.announcementsService.getAnnouncementById(id);
+  async getAnnouncement(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.announcementsService.getAnnouncementById(id, user);
   }
 
   @Post()
@@ -50,14 +56,22 @@ export class AnnouncementsController {
   async updateAnnouncement(
     @Param('id') id: string,
     @Body() announcement: AnnouncementDTO,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return await this.announcementsService.updateAnnouncement(id, announcement);
+    return await this.announcementsService.updateAnnouncement(
+      id,
+      announcement,
+      user,
+    );
   }
 
   @Delete(':id')
   @HttpCode(204)
   @RequireFunction(AppFunction.ANNOUNCEMENTS_MANAGE)
-  async deleteAnnouncement(@Param('id') id: string) {
-    await this.announcementsService.deleteAnnouncement(id);
+  async deleteAnnouncement(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.announcementsService.deleteAnnouncement(id, user);
   }
 }

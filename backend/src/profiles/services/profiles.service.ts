@@ -4,12 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import * as admin from 'firebase-admin';
-import { FirebaseService } from 'src/firebase/firebase.service';
-import { AppFunction } from '../../auth/functions/app-functions';
+import { AuthenticatedUser } from '../../auth/types/authenticated-user';
+import { RepositoryFactory } from '../../persistence/firestore/repository.factory';
+import {
+  ALL_FUNCTIONS,
+  AppFunction,
+} from '../../auth/functions/app-functions';
 import { ProfileDTO } from '../dto/profile.dto';
 import { Profile } from '../entities/profile.entity';
-import { profileConverter } from '../mappers/profile.converter';
 
 /** Functions a system profile must always keep, to avoid locking everyone out. */
 const LOCKOUT_GUARD_FUNCTIONS: AppFunction[] = [
@@ -21,28 +23,17 @@ const LOCKOUT_GUARD_FUNCTIONS: AppFunction[] = [
 export class ProfilesService {
   private readonly cache = new Map<string, Profile>();
 
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(private readonly repositoryFactory: RepositoryFactory) {}
 
-  private collection(): admin.firestore.CollectionReference<Profile> {
-    return this.firebaseService
-      .getFirestore()
-      .collection('profiles')
-      .withConverter(profileConverter);
+  async list(currentUser: AuthenticatedUser): Promise<Profile[]> {
+    return this.repositoryFactory.profiles({ user: currentUser }).findMany();
   }
 
-  async list(): Promise<Profile[]> {
-    const snapshot = await this.collection().get();
-    return snapshot.docs.map((doc) => doc.data());
-  }
-
-  /** Reads a profile, using an in-memory cache to avoid a Firestore hit per request. */
+  /** Reads a profile from Firestore (always fresh — permissions must not stay stale). */
   async get(id: string): Promise<Profile> {
-    const cached = this.cache.get(id);
-    if (cached) {
-      return cached;
-    }
-    const snapshot = await this.collection().doc(id).get();
-    const profile = snapshot.data();
+    const profile = await this.repositoryFactory
+      .profilesUnscoped()
+      .findById(id);
     if (!profile) {
       throw new NotFoundException(`Profile ${id} not found`);
     }
@@ -50,22 +41,27 @@ export class ProfilesService {
     return profile;
   }
 
-  async create(dto: ProfileDTO): Promise<Profile> {
-    const ref = this.collection().doc();
-    const profile: Profile = {
-      id: ref.id,
-      name: dto.name,
-      description: dto.description ?? '',
-      functions: dto.functions,
-      isSystem: false,
-    };
-    await ref.set(profile);
-    this.cache.set(ref.id, profile);
+  async create(dto: ProfileDTO, currentUser: AuthenticatedUser): Promise<Profile> {
+    const profile = await this.repositoryFactory
+      .profiles({ user: currentUser })
+      .createWithGeneratedId((id) => ({
+        id,
+        name: dto.name,
+        description: dto.description ?? '',
+        functions: dto.functions,
+        isSystem: false,
+      }));
+    this.cache.set(profile.id, profile);
     return profile;
   }
 
-  async update(id: string, dto: ProfileDTO): Promise<Profile> {
-    const existing = await this.get(id);
+  async update(
+    id: string,
+    dto: ProfileDTO,
+    currentUser: AuthenticatedUser,
+  ): Promise<Profile> {
+    const repo = this.repositoryFactory.profiles({ user: currentUser });
+    const existing = await repo.findOneOrFail(id);
 
     if (existing.isSystem) {
       const missing = LOCKOUT_GUARD_FUNCTIONS.filter(
@@ -85,13 +81,15 @@ export class ProfilesService {
       functions: dto.functions,
       isSystem: existing.isSystem,
     };
-    await this.collection().doc(id).set(profile);
+    await repo.save(id, profile);
     this.cache.set(id, profile);
     return profile;
   }
 
-  async delete(id: string): Promise<void> {
-    const existing = await this.get(id);
+  async delete(id: string, currentUser: AuthenticatedUser): Promise<void> {
+    const repo = this.repositoryFactory.profiles({ user: currentUser });
+    const existing = await repo.findOneOrFail(id);
+
     if (existing.isSystem) {
       throw new BadRequestException(
         'Perfis de sistema nao podem ser excluidos.',
@@ -102,29 +100,50 @@ export class ProfilesService {
         'Este perfil esta em uso por um ou mais usuarios e nao pode ser excluido.',
       );
     }
-    await this.collection().doc(id).delete();
+    await repo.delete(id);
     this.cache.delete(id);
   }
 
   private async isInUse(profileId: string): Promise<boolean> {
-    const snapshot = await this.firebaseService
-      .getFirestore()
-      .collection('users')
-      .where('profileId', '==', profileId)
-      .limit(1)
-      .get();
-    return !snapshot.empty;
+    const users = await this.repositoryFactory.usersUnscoped().findMany({
+      filters: [{ field: 'profileId', op: '==', value: profileId }],
+      limit: 1,
+    });
+    return users.length > 0;
   }
 
-  /** Idempotent seed used by the bootstrap script. Keeps a deterministic id. */
+  /**
+   * Idempotent seed used by the bootstrap script.
+   * Admin always receives the full catalog; other profiles merge new functions
+   * so re-running seed picks up capabilities added after the first deploy.
+   */
   async seedProfile(
     id: string,
     name: string,
     functions: AppFunction[],
     isSystem: boolean,
   ): Promise<void> {
-    const profile: Profile = { id, name, description: '', functions, isSystem };
-    await this.collection().doc(id).set(profile);
+    const repo = this.repositoryFactory.profilesUnscoped();
+    const existing = await repo.findById(id);
+
+    let finalFunctions: AppFunction[];
+    if (id === 'admin') {
+      finalFunctions = ALL_FUNCTIONS;
+    } else if (existing) {
+      finalFunctions = [...new Set([...existing.functions, ...functions])];
+    } else {
+      finalFunctions = functions;
+    }
+
+    const profile: Profile = {
+      id,
+      name,
+      description: existing?.description ?? '',
+      functions: finalFunctions,
+      isSystem: existing?.isSystem ?? isSystem,
+    };
+
+    await repo.save(id, profile);
     this.cache.set(id, profile);
   }
 }

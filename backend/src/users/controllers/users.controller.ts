@@ -7,10 +7,14 @@ import {
   Param,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { RequireFunction } from '../../auth/decorators/require-function.decorator';
 import { AppFunction } from '../../auth/functions/app-functions';
+import type { AuthenticatedUser } from '../../auth/types/authenticated-user';
 import { CreateUserDTO } from '../dto/create-user.dto';
+import { FilterUsersDTO } from '../dto/filter-users.dto';
 import { UpdateUserDTO } from '../dto/update-user.dto';
 import { UsersService } from '../services/users.service';
 
@@ -20,14 +24,20 @@ export class UsersController {
 
   @Get()
   @RequireFunction(AppFunction.USERS_READ)
-  async list() {
-    return await this.usersService.getUsers();
+  async list(
+    @Query() filter: FilterUsersDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.usersService.getUsers(filter, user);
   }
 
   @Get(':id')
   @RequireFunction(AppFunction.USERS_READ)
-  async getById(@Param('id') id: string) {
-    return await this.usersService.getUserById(id);
+  async getById(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.usersService.getUserById(id, user);
   }
 
   @Post()

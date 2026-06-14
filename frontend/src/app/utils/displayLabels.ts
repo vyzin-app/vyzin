@@ -38,6 +38,9 @@ export const display = {
     ruleUnlinkOnCancel:
       'Visitantes vinculados são removidos automaticamente ao cancelar a reserva',
     churrasqueiraRule: 'Reserva de churrasqueiras com 48h de antecedência',
+    slotAlreadyReserved: 'Horário já reservado',
+    slotsAvailableCount: (available: number, total: number) =>
+      `${available} ${available === 1 ? 'horário disponível' : 'horários disponíveis'} de ${total}`,
     linkedToSelected: 'será vinculado à reserva selecionada.',
     deleteLinksWarning:
       'removido, mas quaisquer vínculos com reservas também serão desfeitos.',

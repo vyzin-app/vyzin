@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import * as admin from 'firebase-admin';
-import { FirebaseService } from 'src/firebase/firebase.service';
+import { Injectable } from '@nestjs/common';
 import { AuthenticatedUser } from '../../auth/types/authenticated-user';
+import type { QueryFilter } from '../../persistence/interfaces/find-options.interface';
+import { RepositoryFactory } from '../../persistence/firestore/repository.factory';
+import { applyTextSearch } from '../../persistence/utils/text-search.util';
 import { VisitorDTO } from '../dto/visitor.dto';
 import { UpdateVisitorStatusDTO } from '../dto/update-visitor-status.dto';
 import { FilterVisitorsDTO } from '../dto/filter-visitors.dto';
@@ -9,81 +10,91 @@ import {
   Visitor,
   VisitorStatusEnum,
 } from '../entities/visitor.entity';
-import { visitorConverter } from '../mappers/visitor.converter';
 
 @Injectable()
 export class VisitorsService {
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(private readonly repositoryFactory: RepositoryFactory) {}
 
-  private collection(): admin.firestore.CollectionReference<Visitor> {
-    return this.firebaseService
-      .getFirestore()
-      .collection('visitors')
-      .withConverter(visitorConverter);
+  async getVisitors(
+    filter: FilterVisitorsDTO,
+    currentUser: AuthenticatedUser,
+  ): Promise<Visitor[]> {
+    const filters = this.buildVisitorFilters(filter);
+    const results = await this.repositoryFactory
+      .visitors({ user: currentUser })
+      .findMany({ filters });
+    return applyTextSearch(results, filter.search, [
+      (visitor) => visitor.name,
+      (visitor) => visitor.cpf,
+      (visitor) => visitor.purpose,
+    ]);
   }
 
-  async getVisitors(filter: FilterVisitorsDTO = {}): Promise<Visitor[]> {
-    let query: admin.firestore.Query<Visitor> = this.collection();
+  async getVisitorById(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<Visitor> {
+    return this.repositoryFactory
+      .visitors({ user: currentUser })
+      .findOneOrFail(id);
+  }
+
+  private buildVisitorFilters(filter: FilterVisitorsDTO = {}): QueryFilter[] {
+    const filters: QueryFilter[] = [];
 
     if (filter.status) {
-      query = query.where('status', '==', filter.status);
+      filters.push({ field: 'status', op: '==', value: filter.status });
     }
 
     if (filter.visitType) {
-      query = query.where('visitType', '==', filter.visitType);
+      filters.push({ field: 'visitType', op: '==', value: filter.visitType });
     }
 
     if (filter.date) {
-      const startOfDay = new Date(filter.date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(filter.date);
-      endOfDay.setHours(23, 59, 59, 999);
-      query = query
-        .where('date', '>=', startOfDay)
-        .where('date', '<=', endOfDay);
+      const dayStart = new Date(filter.date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(filter.date);
+      dayEnd.setHours(23, 59, 59, 999);
+      filters.push({ field: 'date', op: '>=', value: dayStart });
+      filters.push({ field: 'date', op: '<=', value: dayEnd });
     }
 
-    const snapshot = await query.get();
-    return snapshot.docs.map((doc) => doc.data());
-  }
-
-  async getVisitorById(id: string): Promise<Visitor> {
-    const snapshot = await this.collection().doc(id).get();
-    const visitor = snapshot.data();
-    if (!visitor) {
-      throw new NotFoundException(`Visitor ${id} not found`);
-    }
-    return visitor;
+    return filters;
   }
 
   async createVisitor(
     dto: VisitorDTO,
     currentUser: AuthenticatedUser,
   ): Promise<string> {
-    const visitorRef = this.collection().doc();
+    const visitor = await this.repositoryFactory
+      .visitors({ user: currentUser })
+      .createWithGeneratedId((id) => ({
+        id,
+        name: dto.name,
+        cpf: dto.cpf,
+        phone: dto.phone,
+        email: dto.email ?? '',
+        purpose: dto.purpose,
+        date: dto.date,
+        time: dto.time,
+        notes: dto.notes ?? '',
+        visitType: dto.visitType,
+        status: dto.status ?? VisitorStatusEnum.WAITING,
+        authorizedBy: currentUser.uid,
+        exitTime: dto.exitTime,
+      }));
 
-    const visitor: Visitor = {
-      id: visitorRef.id,
-      name: dto.name,
-      cpf: dto.cpf,
-      phone: dto.phone,
-      email: dto.email ?? '',
-      purpose: dto.purpose,
-      date: dto.date,
-      time: dto.time,
-      notes: dto.notes ?? '',
-      visitType: dto.visitType,
-      status: dto.status ?? VisitorStatusEnum.WAITING,
-      authorizedBy: currentUser.uid,
-      exitTime: dto.exitTime,
-    };
-
-    await visitorRef.set(visitor);
-    return visitorRef.id;
+    return visitor.id;
   }
 
-  async updateVisitor(id: string, dto: VisitorDTO): Promise<Visitor> {
-    const existing = await this.getVisitorById(id);
+  async updateVisitor(
+    id: string,
+    dto: VisitorDTO,
+    currentUser: AuthenticatedUser,
+  ): Promise<Visitor> {
+    const repo = this.repositoryFactory.visitors({ user: currentUser });
+    const existing = await repo.findOneOrFail(id);
+
     const visitor: Visitor = {
       ...existing,
       name: dto.name,
@@ -98,8 +109,8 @@ export class VisitorsService {
       status: dto.status ?? existing.status,
       exitTime: dto.exitTime ?? existing.exitTime,
     };
-    await this.collection().doc(id).set(visitor);
-    return visitor;
+
+    return repo.save(id, visitor);
   }
 
   /** Workflow transition (authorize / deny / register exit). */
@@ -108,7 +119,9 @@ export class VisitorsService {
     dto: UpdateVisitorStatusDTO,
     currentUser: AuthenticatedUser,
   ): Promise<Visitor> {
-    const existing = await this.getVisitorById(id);
+    const repo = this.repositoryFactory.visitors({ user: currentUser });
+    const existing = await repo.findOneOrFail(id);
+
     const visitor: Visitor = {
       ...existing,
       status: dto.status,
@@ -118,12 +131,16 @@ export class VisitorsService {
           ? (dto.exitTime ?? existing.exitTime)
           : existing.exitTime,
     };
-    await this.collection().doc(id).set(visitor);
-    return visitor;
+
+    return repo.save(id, visitor);
   }
 
-  async deleteVisitor(id: string): Promise<void> {
-    await this.getVisitorById(id);
-    await this.collection().doc(id).delete();
+  async deleteVisitor(
+    id: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<void> {
+    await this.repositoryFactory
+      .visitors({ user: currentUser })
+      .delete(id);
   }
 }

@@ -120,6 +120,10 @@ Content-Type: application/json
   "linkedVisitorIds": []
 }
 
+### Horarios disponiveis de um espaco em uma data
+GET {{baseUrl}}/reservations/available-slots?space=Sal%C3%A3o%20de%20Festas&date=2026-07-20
+Authorization: Bearer {{token}}
+
 ### Listar / filtrar reservas
 GET {{baseUrl}}/reservations?status=confirmed&date=2026-07-20
 Authorization: Bearer {{token}}

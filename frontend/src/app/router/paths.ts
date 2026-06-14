@@ -6,6 +6,7 @@ export const paths = {
   mural: '/mural',
   visitantes: '/visitantes',
   informacoes: '/informacoes',
+  relatorio: '/relatorio',
   seguranca: {
     root: '/seguranca',
     usuarios: '/seguranca/usuarios',
@@ -19,5 +20,6 @@ export type AppPath =
   | typeof paths.mural
   | typeof paths.visitantes
   | typeof paths.informacoes
+  | typeof paths.relatorio
   | typeof paths.seguranca.usuarios
   | typeof paths.seguranca.perfis

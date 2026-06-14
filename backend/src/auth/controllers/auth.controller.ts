@@ -17,7 +17,7 @@ export class AuthController {
     if (!current) {
       throw new UnauthorizedException();
     }
-    const user = await this.usersService.getUserById(current.uid);
+    const user = await this.usersService.getUserByIdInternal(current.uid);
     const profile = await this.profilesService.get(user.profileId);
     return { user, profile };
   }

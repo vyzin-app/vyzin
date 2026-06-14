@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card } from '@/app/components/ui/card'
 import { Button } from '@/app/components/ui/button'
 import { Badge } from '@/app/components/ui/badge'
@@ -54,6 +54,9 @@ import {
   Visitor,
   Reservation,
 } from '@/app/contexts/CondoDataContext'
+import { reservationRepository } from '@/app/data/reservationRepository'
+import { visitorRepository } from '@/app/data/visitorRepository'
+import { AvailableSlot } from '@/app/domain/reservation'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -65,7 +68,7 @@ const SPACES = [
   { id: 'piscina', name: 'Área da Piscina', capacity: 40 },
 ]
 
-// Block duration in hours per space name
+// Block duration in hours per space name (UI hint; server is source of truth)
 const BLOCK_CONFIG: Record<string, number> = {
   'Salão de Festas': 5,
   'Churrasqueira 1': 5,
@@ -73,9 +76,6 @@ const BLOCK_CONFIG: Record<string, number> = {
   'Quadra Esportiva': 1,
   'Área da Piscina': 1,
 }
-
-const OPEN_HOUR = 8 // 08:00
-const CLOSE_HOUR = 22 // 22:00
 
 const STATUS_CONFIG: Record<
   Reservation['status'],
@@ -89,67 +89,6 @@ const STATUS_CONFIG: Record<
     label: 'Cancelado',
     className: 'bg-red-500/10 text-red-500 border-red-500/20',
   },
-}
-
-// ─── Time-block helpers ───────────────────────────────────────────────────────
-
-function pad(n: number) {
-  return String(n).padStart(2, '0')
-}
-
-interface TimeSlot {
-  startTime: string
-  endTime: string
-  label: string
-}
-
-function getTimeSlots(spaceName: string): TimeSlot[] {
-  const duration = BLOCK_CONFIG[spaceName] ?? 1
-  const slots: TimeSlot[] = []
-  for (let h = OPEN_HOUR; h + duration <= CLOSE_HOUR; h++) {
-    const start = `${pad(h)}:00`
-    const end = `${pad(h + duration)}:00`
-    slots.push({ startTime: start, endTime: end, label: `${start} – ${end}` })
-  }
-  return slots
-}
-
-function timeToMinutes(t: string): number {
-  const [h, m] = t.split(':').map(Number)
-  return h * 60 + (m ?? 0)
-}
-
-function slotsOverlap(
-  aStart: string,
-  aEnd: string,
-  bStart: string,
-  bEnd: string,
-): boolean {
-  const aS = timeToMinutes(aStart)
-  const aE = timeToMinutes(aEnd)
-  const bS = timeToMinutes(bStart)
-  const bE = timeToMinutes(bEnd)
-  return aS < bE && aE > bS
-}
-
-type SlotStatus = 'available' | 'reserved'
-
-function getSlotStatus(
-  slot: TimeSlot,
-  space: string,
-  date: string,
-  reservations: Reservation[],
-  editingId?: string,
-): SlotStatus {
-  const conflicts = reservations.filter(
-    (r) =>
-      r.space === space &&
-      r.date === date &&
-      r.status !== 'cancelled' &&
-      r.id !== editingId &&
-      slotsOverlap(slot.startTime, slot.endTime, r.startTime, r.endTime),
-  )
-  return conflicts.length > 0 ? 'reserved' : 'available'
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -182,17 +121,23 @@ function formatPhone(value: string) {
 interface AddVisitorDialogProps {
   open: boolean
   onClose: () => void
+  onSuccess?: () => void
   reservation: Reservation
 }
 
 function AddVisitorDialog({
   open,
   onClose,
+  onSuccess,
   reservation,
 }: AddVisitorDialogProps) {
-  const { visitors, addVisitor, linkVisitorToReservation } = useCondoData()
+  const { addVisitor, linkVisitorToReservation } = useCondoData()
   const [tab, setTab] = useState<'existing' | 'new'>('existing')
   const [search, setSearch] = useState('')
+  const [available, setAvailable] = useState<Visitor[]>([])
+  const [loadingVisitors, setLoadingVisitors] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [linking, setLinking] = useState(false)
   const [newForm, setNewForm] = useState({
     name: '',
     cpf: '',
@@ -202,39 +147,112 @@ function AddVisitorDialog({
     notes: '',
   })
 
-  const available = visitors.filter(
-    (v) =>
-      !reservation.linkedVisitorIds.includes(v.id) &&
-      (v.name.toLowerCase().includes(search.toLowerCase()) ||
-        v.cpf.includes(search)),
-  )
+  useEffect(() => {
+    if (!open) {
+      setTab('existing')
+      setSearch('')
+      setLinkError(null)
+      setNewForm({
+        name: '',
+        cpf: '',
+        phone: '',
+        email: '',
+        purpose: '',
+        notes: '',
+      })
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open || tab !== 'existing') {
+      return
+    }
+
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      setLoadingVisitors(true)
+      try {
+        const results = await visitorRepository.list({
+          search: search || undefined,
+        })
+        if (!cancelled) {
+          setAvailable(
+            results.filter(
+              (visitor) =>
+                !(reservation.linkedVisitorIds ?? []).includes(visitor.id),
+            ),
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingVisitors(false)
+        }
+      }
+    }, 300)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [open, tab, search, reservation.linkedVisitorIds])
 
   async function handleSelectExisting(visitorId: string) {
-    await linkVisitorToReservation(visitorId, reservation.id)
-    onClose()
+    setLinking(true)
+    setLinkError(null)
+    try {
+      await linkVisitorToReservation(visitorId, reservation.id, reservation)
+      onSuccess?.()
+      onClose()
+    } catch (err) {
+      setLinkError(
+        err instanceof Error
+          ? err.message
+          : 'Nao foi possivel vincular o visitante.',
+      )
+    } finally {
+      setLinking(false)
+    }
   }
 
   async function handleRegisterNew() {
     if (!newForm.name || !newForm.cpf) return
-    const id = await addVisitor({
-      name: newForm.name,
-      cpf: newForm.cpf,
-      phone: newForm.phone,
-      email: newForm.email,
-      purpose: newForm.purpose || display.reservation.guestPurpose,
-      date: reservation.date,
-      time: reservation.startTime,
-      notes: newForm.notes,
-      visitType: 'reservation',
-      status: 'authorized',
-      authorizedBy: display.reservation.linkedVia,
-    })
-    await linkVisitorToReservation(id, reservation.id)
-    onClose()
+    setLinking(true)
+    setLinkError(null)
+    try {
+      const id = await addVisitor({
+        name: newForm.name,
+        cpf: newForm.cpf,
+        phone: newForm.phone,
+        email: newForm.email,
+        purpose: newForm.purpose || display.reservation.guestPurpose,
+        date: reservation.date,
+        time: reservation.startTime || '00:00',
+        notes: newForm.notes,
+        visitType: 'reservation',
+        status: 'authorized',
+        authorizedBy: '',
+      })
+      await linkVisitorToReservation(id, reservation.id, reservation)
+      onSuccess?.()
+      onClose()
+    } catch (err) {
+      setLinkError(
+        err instanceof Error
+          ? err.message
+          : 'Nao foi possivel cadastrar e vincular o visitante.',
+      )
+    } finally {
+      setLinking(false)
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose()
+      }}
+    >
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -254,6 +272,11 @@ function AddVisitorDialog({
 
           {/* ── Select existing ── */}
           <TabsContent value="existing" className="space-y-3 mt-4">
+            {linkError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {linkError}
+              </div>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -264,7 +287,11 @@ function AddVisitorDialog({
               />
             </div>
 
-            {available.length === 0 ? (
+            {loadingVisitors ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">
+                Buscando visitantes...
+              </div>
+            ) : available.length === 0 ? (
               <div className="py-8 text-center text-muted-foreground text-sm">
                 {search
                   ? 'Nenhum visitante encontrado para essa busca.'
@@ -275,8 +302,10 @@ function AddVisitorDialog({
                 {available.map((v) => (
                   <button
                     key={v.id}
-                    onClick={() => handleSelectExisting(v.id)}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-all text-left"
+                    type="button"
+                    disabled={linking}
+                    onClick={() => void handleSelectExisting(v.id)}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-all text-left disabled:opacity-50 disabled:pointer-events-none"
                   >
                     <div className="w-9 h-9 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                       <Users className="w-4 h-4 text-primary" />
@@ -294,6 +323,11 @@ function AddVisitorDialog({
 
           {/* ── Register new ── */}
           <TabsContent value="new" className="space-y-4 mt-4">
+            {linkError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {linkError}
+              </div>
+            )}
             <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-sm text-primary">
               {display.reservation.guestRegisteredAs}
               automaticamente.
@@ -361,9 +395,10 @@ function AddVisitorDialog({
                 Cancelar
               </Button>
               <Button
-                onClick={handleRegisterNew}
+                type="button"
+                onClick={() => void handleRegisterNew()}
                 className="bg-primary hover:bg-primary/90"
-                disabled={!newForm.name || !newForm.cpf}
+                disabled={!newForm.name || !newForm.cpf || linking}
               >
                 <UserPlus className="w-4 h-4 mr-2" />
                 Cadastrar e Vincular
@@ -391,9 +426,9 @@ interface TimeBlockPickerProps {
   date: string
   selectedStart: string
   selectedEnd: string
-  reservations: Reservation[]
   editingId?: string
   onSelect: (start: string, end: string) => void
+  onClearSelection?: () => void
 }
 
 function TimeBlockPicker({
@@ -401,10 +436,66 @@ function TimeBlockPicker({
   date,
   selectedStart,
   selectedEnd,
-  reservations,
   editingId,
   onSelect,
+  onClearSelection,
 }: TimeBlockPickerProps) {
+  const [slots, setSlots] = useState<AvailableSlot[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!space || !date) {
+      setSlots([])
+      setError(null)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadSlots() {
+      setLoading(true)
+      setError(null)
+      try {
+        const schedule = await reservationRepository.getAvailableSlots(
+          space,
+          date,
+          editingId,
+        )
+        if (cancelled) return
+        setSlots(schedule)
+
+        const selectionStillValid = schedule.some(
+          (slot) =>
+            slot.available &&
+            slot.startTime === selectedStart &&
+            slot.endTime === selectedEnd,
+        )
+        if (selectedStart && selectedEnd && !selectionStillValid) {
+          onClearSelection?.()
+        }
+      } catch (err) {
+        if (cancelled) return
+        setSlots([])
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Não foi possível carregar os horários.',
+        )
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void loadSlots()
+
+    return () => {
+      cancelled = true
+    }
+  }, [space, date, editingId, selectedStart, selectedEnd, onClearSelection])
+
   if (!space || !date) {
     return (
       <div className="p-4 text-center text-sm text-muted-foreground bg-secondary/40 rounded-lg">
@@ -413,61 +504,72 @@ function TimeBlockPicker({
     )
   }
 
-  const slots = getTimeSlots(space)
+  if (loading) {
+    return (
+      <div className="p-4 text-center text-sm text-muted-foreground bg-secondary/40 rounded-lg">
+        Carregando horários disponíveis...
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-center text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg">
+        {error}
+      </div>
+    )
+  }
+
+  if (slots.length === 0) {
+    return (
+      <div className="p-4 text-center text-sm text-muted-foreground bg-secondary/40 rounded-lg">
+        Nenhum horário configurado para este espaço.
+      </div>
+    )
+  }
+
+  const availableCount = slots.filter((slot) => slot.available).length
 
   return (
     <div className="space-y-3">
-      {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm bg-[#10B981] inline-block" />
-          Disponível
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm bg-orange-400 inline-block" />
-          {display.reservation.reserved}
-        </span>
-      </div>
+      <p className="text-xs text-muted-foreground">
+        {display.reservation.slotsAvailableCount(availableCount, slots.length)}
+      </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {slots.map((slot) => {
-          const status = getSlotStatus(
-            slot,
-            space,
-            date,
-            reservations,
-            editingId,
-          )
           const isSelected =
-            slot.startTime === selectedStart && slot.endTime === selectedEnd
-          const isReserved = status === 'reserved'
-
-          let cls =
-            'relative px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all text-center '
-          if (isSelected) {
-            cls += 'border-primary bg-primary text-white shadow-md scale-[1.02]'
-          } else if (isReserved) {
-            cls +=
-              'border-orange-300 bg-orange-50 text-orange-600 cursor-not-allowed opacity-75'
-          } else {
-            cls +=
-              'border-[#10B981]/40 bg-[#10B981]/5 text-[#10B981] hover:bg-[#10B981]/15 hover:border-[#10B981] cursor-pointer'
-          }
+            slot.available &&
+            slot.startTime === selectedStart &&
+            slot.endTime === selectedEnd
 
           return (
             <button
               key={slot.label}
               type="button"
-              disabled={isReserved}
-              onClick={() =>
-                !isReserved && onSelect(slot.startTime, slot.endTime)
+              disabled={!slot.available}
+              title={
+                slot.available
+                  ? undefined
+                  : display.reservation.slotAlreadyReserved
               }
-              className={cls}
+              onClick={() => {
+                if (slot.available) {
+                  onSelect(slot.startTime, slot.endTime)
+                }
+              }}
+              className={
+                !slot.available
+                  ? 'relative px-3 py-2.5 rounded-lg border-2 text-sm font-medium text-center border-border bg-muted/60 text-muted-foreground cursor-not-allowed opacity-70'
+                  : isSelected
+                    ? 'relative px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all text-center border-primary bg-primary text-white shadow-md scale-[1.02]'
+                    : 'relative px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all text-center border-[#10B981]/40 bg-[#10B981]/5 text-[#10B981] hover:bg-[#10B981]/15 hover:border-[#10B981] cursor-pointer'
+              }
             >
-              {slot.label}
-              {isReserved && (
-                <span className="block text-xs font-normal text-orange-500 mt-0.5">
-                  {display.reservation.reserved}
+              <span>{slot.label}</span>
+              {!slot.available && (
+                <span className="block text-[10px] font-normal mt-0.5 leading-tight">
+                  {display.reservation.slotAlreadyReserved}
                 </span>
               )}
             </button>
@@ -486,6 +588,7 @@ interface ReservationCardProps {
   onEdit: () => void
   onDelete: () => void
   onCancel: () => void
+  onVisitorsChanged?: () => void
 }
 
 function ReservationCard({
@@ -494,6 +597,7 @@ function ReservationCard({
   onEdit,
   onDelete,
   onCancel,
+  onVisitorsChanged,
 }: ReservationCardProps) {
   const { getLinkedVisitors, unlinkVisitorFromReservation } = useCondoData()
   const [visitorsExpanded, setVisitorsExpanded] = useState(true)
@@ -537,7 +641,10 @@ function ReservationCard({
                 </div>
                 <div className="text-sm text-muted-foreground">
                   <span className="font-medium">Solicitante:</span>{' '}
-                  {r.createdBy}
+                  {r.createdByDisplay ??
+                    r.createdByName ??
+                    r.createdByEmail ??
+                    '—'}
                 </div>
                 {r.notes && (
                   <div className="text-sm text-muted-foreground">
@@ -660,7 +767,9 @@ function ReservationCard({
                       {!isCancelled && canEdit && (
                         <button
                           onClick={() =>
-                            unlinkVisitorFromReservation(v.id, r.id)
+                            void unlinkVisitorFromReservation(v.id, r.id, r).then(
+                              () => onVisitorsChanged?.(),
+                            )
                           }
                           title="Remover vínculo"
                           className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-red-50 hover:text-red-600 text-muted-foreground"
@@ -702,6 +811,7 @@ function ReservationCard({
       <AddVisitorDialog
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
+        onSuccess={onVisitorsChanged}
         reservation={r}
       />
     </>
@@ -740,22 +850,32 @@ export function Reservations({
   const isDoorman = user?.role === 'doorman'
 
   const {
-    reservations,
     addReservation,
     updateReservation,
     deleteReservation,
   } = useCondoData()
 
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [listLoading, setListLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<
     'all' | 'confirmed' | 'cancelled'
   >('all')
+  const [stats, setStats] = useState({
+    total: 0,
+    confirmed: 0,
+    cancelled: 0,
+  })
   const [isLocalFormDialogOpen, setIsLocalFormDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [editingReservation, setEditingReservation] =
     useState<Reservation | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [form, setForm] = useState<ReservationForm>(EMPTY_FORM)
+
+  const clearTimeSelection = useCallback(() => {
+    setForm((current) => ({ ...current, startTime: '', endTime: '' }))
+  }, [])
 
   const isFormDialogOpen = openNewModal || isLocalFormDialogOpen
 
@@ -766,40 +886,58 @@ export function Reservations({
     setIsLocalFormDialogOpen(open)
   }
 
+  const listFilter = useMemo(
+    () => ({
+      search: searchQuery.trim() || undefined,
+      status:
+        statusFilter === 'all'
+          ? undefined
+          : (statusFilter as Reservation['status']),
+    }),
+    [searchQuery, statusFilter],
+  )
+
+  const loadReservations = useCallback(async () => {
+    setListLoading(true)
+    try {
+      const data = await reservationRepository.list(listFilter)
+      setReservations(data)
+    } finally {
+      setListLoading(false)
+    }
+  }, [listFilter])
+
+  const loadStats = useCallback(async () => {
+    const search = searchQuery.trim() || undefined
+    const [all, confirmed, cancelled] = await Promise.all([
+      reservationRepository.list({ search }),
+      reservationRepository.list({ search, status: 'confirmed' }),
+      reservationRepository.list({ search, status: 'cancelled' }),
+    ])
+    setStats({
+      total: all.length,
+      confirmed: confirmed.length,
+      cancelled: cancelled.length,
+    })
+  }, [searchQuery])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadReservations()
+      void loadStats()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [loadReservations, loadStats])
+
+  const refreshList = useCallback(async () => {
+    await Promise.all([loadReservations(), loadStats()])
+  }, [loadReservations, loadStats])
+
   // Helper to check if a reservation belongs to the current user
   function isUserReservation(r: Reservation) {
     if (!user) return false
     return r.createdBy === user.id
   }
-
-  // First filter by role (residents see only their own)
-  const roleFiltered = reservations.filter((r) => {
-    if (isResident) return isUserReservation(r)
-    return true
-  })
-
-  // Then filter by status
-  const statusFiltered = roleFiltered.filter((r) => {
-    if (statusFilter === 'all') return true
-    return r.status === statusFilter
-  })
-
-  // Then filter by search query
-  const filtered = statusFiltered.filter((r) => {
-    const query = searchQuery.toLowerCase()
-    if (isResident) {
-      // Residents search within their own reservations
-      return (
-        r.space.toLowerCase().includes(query) ||
-        r.createdBy.toLowerCase().includes(query)
-      )
-    }
-    // Admin/doorman search by resident name, apartment, space
-    return (
-      r.space.toLowerCase().includes(query) ||
-      r.createdBy.toLowerCase().includes(query)
-    )
-  })
 
   function canEditReservation(r: Reservation) {
     if (!permissions?.canManageReservations) return false
@@ -838,25 +976,29 @@ export function Reservations({
 
   function handleSave() {
     if (editingReservation) {
-      updateReservation(editingReservation.id, { ...form })
+      updateReservation(editingReservation.id, { ...form }).then(() =>
+        refreshList(),
+      )
     } else {
       addReservation({
         ...form,
         status: 'confirmed',
         createdBy: user?.id ?? '',
         linkedVisitorIds: [],
-      })
+      }).then(() => refreshList())
     }
     setIsFormDialogOpen(false)
   }
 
   function handleCancel(id: string) {
-    updateReservation(id, { status: 'cancelled', linkedVisitorIds: [] })
+    updateReservation(id, { status: 'cancelled', linkedVisitorIds: [] }).then(
+      () => refreshList(),
+    )
   }
 
   function confirmDelete() {
     if (deletingId) {
-      deleteReservation(deletingId)
+      deleteReservation(deletingId).then(() => refreshList())
       setDeletingId(null)
       setIsDeleteDialogOpen(false)
     }
@@ -864,21 +1006,20 @@ export function Reservations({
 
   const isFormValid = form.space && form.date && form.startTime && form.endTime
 
-  // Stats
-  const stats = [
+  const statsCards = [
     {
       label: isResident ? display.reservation.myMany : 'Total',
-      value: roleFiltered.length,
+      value: stats.total,
       iconBg: 'bg-blue-500',
     },
     {
       label: 'Confirmadas',
-      value: roleFiltered.filter((r) => r.status === 'confirmed').length,
+      value: stats.confirmed,
       iconBg: 'bg-[#10B981]',
     },
     {
       label: 'Canceladas',
-      value: roleFiltered.filter((r) => r.status === 'cancelled').length,
+      value: stats.cancelled,
       iconBg: 'bg-red-500',
     },
   ]
@@ -912,7 +1053,7 @@ export function Reservations({
 
         {/* Stats — standardized to match main Dashboard pattern */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {stats.map((stat) => (
+          {statsCards.map((stat) => (
             <Card
               key={stat.label}
               className="p-6 hover:shadow-lg transition-shadow"
@@ -967,24 +1108,31 @@ export function Reservations({
 
         {/* Reservation cards */}
         <div className="space-y-4">
-          {filtered.length === 0 && (
+          {listLoading && (
+            <Card className="p-12 text-center text-muted-foreground">
+              Carregando reservas...
+            </Card>
+          )}
+          {!listLoading && reservations.length === 0 && (
             <Card className="p-12 text-center text-muted-foreground">
               {display.reservation.noneFound}
             </Card>
           )}
-          {filtered.map((r) => (
-            <ReservationCard
-              key={r.id}
-              reservation={r}
-              canEdit={canEditReservation(r)}
-              onEdit={() => handleEdit(r)}
-              onDelete={() => {
-                setDeletingId(r.id)
-                setIsDeleteDialogOpen(true)
-              }}
-              onCancel={() => handleCancel(r.id)}
-            />
-          ))}
+          {!listLoading &&
+            reservations.map((r) => (
+              <ReservationCard
+                key={r.id}
+                reservation={r}
+                canEdit={canEditReservation(r)}
+                onEdit={() => handleEdit(r)}
+                onDelete={() => {
+                  setDeletingId(r.id)
+                  setIsDeleteDialogOpen(true)
+                }}
+                onCancel={() => handleCancel(r.id)}
+                onVisitorsChanged={() => void refreshList()}
+              />
+            ))}
         </div>
 
         {/* Reservation Rules */}
@@ -1060,11 +1208,11 @@ export function Reservations({
                   date={form.date}
                   selectedStart={form.startTime}
                   selectedEnd={form.endTime}
-                  reservations={reservations}
                   editingId={editingReservation?.id}
                   onSelect={(start, end) =>
                     setForm((f) => ({ ...f, startTime: start, endTime: end }))
                   }
+                  onClearSelection={clearTimeSelection}
                 />
                 {form.startTime && form.endTime && (
                   <div className="flex items-center gap-2 px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg text-sm text-primary">

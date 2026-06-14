@@ -35,6 +35,7 @@ import {
   Lock,
   UserCog,
   Loader2,
+  Search,
 } from 'lucide-react'
 import {
   Select,
@@ -118,6 +119,12 @@ export function UserManagement() {
   const [newUserEmail, setNewUserEmail] = useState('')
   const [copiedPassword, setCopiedPassword] = useState(false)
   const [formData, setFormData] = useState<UserForm>(EMPTY_FORM)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [stats, setStats] = useState({
+    total: 0,
+    residents: 0,
+    others: 0,
+  })
 
   const profileMap = useMemo(
     () => new Map(profiles.map((p) => [p.id, p.name])),
@@ -128,21 +135,41 @@ export function UserManagement() {
     setLoading(true)
     setError(null)
     try {
-      const [userList, profileList] = await Promise.all([
-        userRepository.list(),
-        profileRepository.list(),
-      ])
+      const search = searchQuery.trim() || undefined
+      const listParams = isDoorman
+        ? { search, profileId: 'resident' as const }
+        : { search }
+
+      const [userList, profileList, scopedUsers, residentUsers] =
+        await Promise.all([
+          userRepository.list(listParams),
+          profileRepository.list(),
+          userRepository.list(listParams),
+          userRepository.list({ search, profileId: 'resident' }),
+        ])
+
+      const total = scopedUsers.length
+      const residents = isDoorman ? total : residentUsers.length
+
       setUsers(userList)
       setProfiles(profileList)
+      setStats({
+        total,
+        residents,
+        others: isDoorman ? 0 : total - residents,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar usuários')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [searchQuery, isDoorman])
 
   useEffect(() => {
-    void loadData()
+    const timer = setTimeout(() => {
+      void loadData()
+    }, 300)
+    return () => clearTimeout(timer)
   }, [loadData])
 
   const canManage = (u: ManagedUser) =>
@@ -151,10 +178,6 @@ export function UserManagement() {
   const selectableProfiles = isDoorman
     ? profiles.filter((p) => p.id === 'resident')
     : profiles
-
-  const visibleUsers = isDoorman
-    ? users.filter((u) => u.profileId === 'resident')
-    : users
 
   const handleCreate = () => {
     setEditingUser(null)
@@ -305,21 +328,19 @@ export function UserManagement() {
           {[
             {
               label: 'Total de Usuários',
-              value: visibleUsers.length,
+              value: stats.total,
               iconBg: 'bg-blue-500',
               Icon: Users,
             },
             {
               label: 'Moradores',
-              value: visibleUsers.filter((u) => u.profileId === 'resident')
-                .length,
+              value: stats.residents,
               iconBg: 'bg-[#10B981]',
               Icon: Users,
             },
             {
               label: 'Outros perfis',
-              value: visibleUsers.filter((u) => u.profileId !== 'resident')
-                .length,
+              value: stats.others,
               iconBg: 'bg-purple-500',
               Icon: UserCog,
             },
@@ -340,8 +361,18 @@ export function UserManagement() {
           ))}
         </div>
 
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome, e-mail, CPF ou telefone..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+
         <div className="grid grid-cols-1 gap-4">
-          {visibleUsers.map((u) => {
+          {users.map((u) => {
             const manageable = canManage(u)
             return (
               <Card
@@ -417,7 +448,7 @@ export function UserManagement() {
             )
           })}
 
-          {visibleUsers.length === 0 && (
+          {users.length === 0 && (
             <Card className="p-12 text-center text-muted-foreground">
               Nenhum usuário cadastrado ainda.
             </Card>

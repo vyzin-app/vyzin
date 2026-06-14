@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { Badge } from "@/app/components/ui/badge";
@@ -30,6 +30,7 @@ import {
   Announcement,
   AnnouncementCategory,
 } from "@/app/domain/announcement";
+import { AnnouncementListFilter } from "@/app/domain/listFilters";
 
 const categories: {
   id: AnnouncementCategory | "all";
@@ -89,22 +90,79 @@ export function MuralAvisos() {
     isPinned: false,
     isImportant: false,
   });
+  const [stats, setStats] = useState({
+    total: 0,
+    pinned: 0,
+    important: 0,
+  });
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({
+    all: 0,
+    general: 0,
+    event: 0,
+    maintenance: 0,
+    important: 0,
+  });
+
+  const listFilter = useMemo((): AnnouncementListFilter => {
+    const filter: AnnouncementListFilter = {
+      search: searchQuery.trim() || undefined,
+    };
+    if (selectedCategory !== "all") {
+      filter.category = selectedCategory;
+    }
+    return filter;
+  }, [searchQuery, selectedCategory]);
+
+  const loadStats = useCallback(async () => {
+    const search = searchQuery.trim() || undefined;
+    const [all, pinned, important] = await Promise.all([
+      announcementRepository.list({ search }),
+      announcementRepository.list({ search, isPinned: true }),
+      announcementRepository.list({ search, isImportant: true }),
+    ]);
+    setStats({
+      total: all.length,
+      pinned: pinned.length,
+      important: important.length,
+    });
+  }, [searchQuery]);
+
+  const loadCategoryCounts = useCallback(async () => {
+    const search = searchQuery.trim() || undefined;
+    const all = await announcementRepository.list({ search });
+    const counts: Record<string, number> = { all: all.length };
+
+    await Promise.all(
+      (["general", "event", "maintenance", "important"] as AnnouncementCategory[]).map(
+        async (category) => {
+          const items = await announcementRepository.list({ search, category });
+          counts[category] = items.length;
+        },
+      ),
+    );
+
+    setCategoryCounts(counts);
+  }, [searchQuery]);
 
   const loadAnnouncements = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await announcementRepository.list();
+      const data = await announcementRepository.list(listFilter);
       setAnnouncements(data);
+      await Promise.all([loadStats(), loadCategoryCounts()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar avisos");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [listFilter, loadStats, loadCategoryCounts]);
 
   useEffect(() => {
-    void loadAnnouncements();
+    const timer = setTimeout(() => {
+      void loadAnnouncements();
+    }, 300);
+    return () => clearTimeout(timer);
   }, [loadAnnouncements]);
 
   const handleCreate = () => {
@@ -176,18 +234,9 @@ export function MuralAvisos() {
     }
   };
 
-  const filteredAnnouncements = announcements
-    .filter(
-      (a) => selectedCategory === "all" || a.category === selectedCategory,
-    )
-    .filter(
-      (a) =>
-        searchQuery === "" ||
-        a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        a.content.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
+  const filteredAnnouncements = announcements;
 
-  if (loading) {
+  if (loading && announcements.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -224,9 +273,9 @@ export function MuralAvisos() {
         {/* Stats — standardized to match main Dashboard pattern */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: "Total de Avisos", value: announcements.length,                            iconBg: "bg-blue-500" },
-            { label: "Fixados",         value: announcements.filter(a => a.isPinned).length,    iconBg: "bg-primary" },
-            { label: "Importantes",     value: announcements.filter(a => a.isImportant).length, iconBg: "bg-orange-500" }
+            { label: "Total de Avisos", value: stats.total,                            iconBg: "bg-blue-500" },
+            { label: "Fixados",         value: stats.pinned,    iconBg: "bg-primary" },
+            { label: "Importantes",     value: stats.important, iconBg: "bg-orange-500" }
           ].map(s => (
             <Card key={s.label} className="p-6 hover:shadow-lg transition-shadow">
               <div className="flex items-center justify-between">
@@ -257,9 +306,7 @@ export function MuralAvisos() {
         <div className="flex gap-2 overflow-x-auto pb-2">
           {categories.map((category) => {
             const Icon = category.icon;
-            const count = category.id === "all"
-              ? announcements.length
-              : announcements.filter(a => a.category === category.id).length;
+            const count = categoryCounts[category.id] ?? 0;
 
             return (
               <button

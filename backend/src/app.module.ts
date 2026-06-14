@@ -4,9 +4,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { PersistenceModule } from './persistence/persistence.module';
 import { MuralModule } from './mural/mural.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { ReservationsModule } from './reservas/reservations.module';
+import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { VisitorsModule } from './visitantes/visitors.module';
 
@@ -14,12 +16,14 @@ import { VisitorsModule } from './visitantes/visitors.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     FirebaseModule,
+    PersistenceModule,
     ProfilesModule,
     UsersModule,
     AuthModule,
     ReservationsModule,
     VisitorsModule,
     MuralModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

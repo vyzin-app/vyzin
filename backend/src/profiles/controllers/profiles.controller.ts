@@ -8,8 +8,10 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { RequireFunction } from '../../auth/decorators/require-function.decorator';
 import { AppFunction } from '../../auth/functions/app-functions';
+import type { AuthenticatedUser } from '../../auth/types/authenticated-user';
 import { ProfileDTO } from '../dto/profile.dto';
 import { ProfilesService } from '../services/profiles.service';
 
@@ -19,8 +21,8 @@ export class ProfilesController {
 
   @Get()
   @RequireFunction(AppFunction.PROFILES_READ)
-  async list() {
-    return await this.profilesService.list();
+  async list(@CurrentUser() user: AuthenticatedUser) {
+    return await this.profilesService.list(user);
   }
 
   @Get(':id')
@@ -31,20 +33,30 @@ export class ProfilesController {
 
   @Post()
   @RequireFunction(AppFunction.PROFILES_MANAGE)
-  async create(@Body() dto: ProfileDTO) {
-    return await this.profilesService.create(dto);
+  async create(
+    @Body() dto: ProfileDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.profilesService.create(dto, user);
   }
 
   @Put(':id')
   @RequireFunction(AppFunction.PROFILES_MANAGE)
-  async update(@Param('id') id: string, @Body() dto: ProfileDTO) {
-    return await this.profilesService.update(id, dto);
+  async update(
+    @Param('id') id: string,
+    @Body() dto: ProfileDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.profilesService.update(id, dto, user);
   }
 
   @Delete(':id')
   @HttpCode(204)
   @RequireFunction(AppFunction.PROFILES_MANAGE)
-  async delete(@Param('id') id: string) {
-    await this.profilesService.delete(id);
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.profilesService.delete(id, user);
   }
 }

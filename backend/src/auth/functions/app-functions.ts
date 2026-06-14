@@ -19,6 +19,7 @@ export enum AppFunction {
   USERS_MANAGE = 'users:manage',
   PROFILES_READ = 'profiles:read',
   PROFILES_MANAGE = 'profiles:manage',
+  REPORTS_READ = 'reports:read',
 }
 
 export interface FunctionDescriptor {
@@ -94,6 +95,11 @@ export const APP_FUNCTION_CATALOG: FunctionDescriptor[] = [
     key: AppFunction.PROFILES_MANAGE,
     label: 'Criar, editar e remover perfis',
     area: 'Perfis',
+  },
+  {
+    key: AppFunction.REPORTS_READ,
+    label: 'Visualizar relatorios operacionais',
+    area: 'Relatorios',
   },
 ];
 

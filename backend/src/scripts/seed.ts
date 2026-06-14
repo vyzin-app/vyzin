@@ -257,6 +257,7 @@ async function seed(): Promise<void> {
       AppFunction.ANNOUNCEMENTS_READ,
       AppFunction.USERS_READ,
       AppFunction.USERS_MANAGE,
+      AppFunction.REPORTS_READ,
     ],
     false,
   );
@@ -270,6 +271,7 @@ async function seed(): Promise<void> {
       AppFunction.VISITORS_MANAGE,
       AppFunction.ANNOUNCEMENTS_READ,
       AppFunction.INFORMATION_READ,
+      AppFunction.REPORTS_READ,
     ],
     false,
   );

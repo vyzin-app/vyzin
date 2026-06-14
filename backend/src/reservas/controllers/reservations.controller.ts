@@ -14,6 +14,7 @@ import { RequireFunction } from '../../auth/decorators/require-function.decorato
 import { AppFunction } from '../../auth/functions/app-functions';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user';
 import { ReservationsService } from '../services/reservations.service';
+import { FilterAvailableSlotsDTO } from '../dto/filter-available-slots.dto';
 import { ReservationDTO } from '../dto/reservation.dto';
 import { FilterReservationsDTO } from '../dto/filter-reservations.dto';
 
@@ -23,14 +24,26 @@ export class ReservationsController {
 
   @Get()
   @RequireFunction(AppFunction.RESERVATIONS_READ)
-  async getReservations(@Query() filter: FilterReservationsDTO) {
-    return await this.reservationsService.getReservations(filter);
+  async getReservations(
+    @Query() filter: FilterReservationsDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.reservationsService.getReservations(filter, user);
+  }
+
+  @Get('available-slots')
+  @RequireFunction(AppFunction.RESERVATIONS_READ)
+  async getAvailableSlots(@Query() filter: FilterAvailableSlotsDTO) {
+    return await this.reservationsService.getAvailableSlots(filter);
   }
 
   @Get(':id')
   @RequireFunction(AppFunction.RESERVATIONS_READ)
-  async getReservation(@Param('id') id: string) {
-    return await this.reservationsService.getReservationById(id);
+  async getReservation(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.reservationsService.getReservationById(id, user);
   }
 
   @Post()
@@ -40,6 +53,27 @@ export class ReservationsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return await this.reservationsService.createReservation(reservation, user);
+  }
+
+  @Post(':id/visitors/:visitorId')
+  @RequireFunction(AppFunction.VISITORS_MANAGE)
+  async linkVisitor(
+    @Param('id') id: string,
+    @Param('visitorId') visitorId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.reservationsService.linkVisitor(id, visitorId, user);
+  }
+
+  @Delete(':id/visitors/:visitorId')
+  @HttpCode(204)
+  @RequireFunction(AppFunction.VISITORS_MANAGE)
+  async unlinkVisitor(
+    @Param('id') id: string,
+    @Param('visitorId') visitorId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.reservationsService.unlinkVisitor(id, visitorId, user);
   }
 
   @Put(':id')

@@ -3,36 +3,61 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import * as admin from 'firebase-admin';
 import { FirebaseService } from 'src/firebase/firebase.service';
+import { AuthenticatedUser } from '../../auth/types/authenticated-user';
+import { RepositoryFactory } from '../../persistence/firestore/repository.factory';
+import type { QueryFilter } from '../../persistence/interfaces/find-options.interface';
+import { applyTextSearch } from '../../persistence/utils/text-search.util';
 import { ProfilesService } from 'src/profiles/services/profiles.service';
+import { FilterUsersDTO } from '../dto/filter-users.dto';
 import { CreateUserDTO } from '../dto/create-user.dto';
 import { UpdateUserDTO } from '../dto/update-user.dto';
 import { User } from '../entities/user.entity';
-import { userConverter } from '../mappers/user.converter';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly firebaseService: FirebaseService,
     private readonly profilesService: ProfilesService,
+    private readonly repositoryFactory: RepositoryFactory,
   ) {}
 
-  private collection(): admin.firestore.CollectionReference<User> {
-    return this.firebaseService
-      .getFirestore()
-      .collection('users')
-      .withConverter(userConverter);
+  async getUsers(
+    filter: FilterUsersDTO,
+    currentUser: AuthenticatedUser,
+  ): Promise<User[]> {
+    const filters: QueryFilter[] = [];
+
+    if (filter.profileId) {
+      filters.push({ field: 'profileId', op: '==', value: filter.profileId });
+    }
+
+    const results = await this.repositoryFactory
+      .users({ user: currentUser })
+      .findMany({ filters });
+
+    return applyTextSearch(results, filter.search, [
+      (user) => user.name,
+      (user) => user.email,
+      (user) => user.cpf,
+      (user) => user.phone,
+      (user) => user.apartment,
+      (user) => user.block,
+    ]);
   }
 
-  async getUsers(): Promise<User[]> {
-    const snapshot = await this.collection().get();
-    return snapshot.docs.map((doc) => doc.data());
+  async getUserById(
+    uid: string,
+    currentUser: AuthenticatedUser,
+  ): Promise<User> {
+    return this.repositoryFactory
+      .users({ user: currentUser })
+      .findOneOrFail(uid);
   }
 
-  async getUserById(uid: string): Promise<User> {
-    const snapshot = await this.collection().doc(uid).get();
-    const user = snapshot.data();
+  /** Internal lookup without row-level scope (auth guard, seed). */
+  async getUserByIdInternal(uid: string): Promise<User> {
+    const user = await this.repositoryFactory.usersUnscoped().findById(uid);
     if (!user) {
       throw new NotFoundException(`User ${uid} not found`);
     }
@@ -68,12 +93,14 @@ export class UsersService {
       block: dto.block,
       profileId: dto.profileId,
     };
-    await this.collection().doc(uid).set(user);
+    await this.repositoryFactory.usersUnscoped().create(user, uid);
     return user;
   }
 
   async updateUser(uid: string, dto: UpdateUserDTO): Promise<User> {
-    const existing = await this.getUserById(uid);
+    const existing = await this.repositoryFactory
+      .usersUnscoped()
+      .findOneOrFail(uid);
     await this.profilesService.get(dto.profileId);
 
     if (dto.profileId !== existing.profileId) {
@@ -92,14 +119,14 @@ export class UsersService {
       block: dto.block,
       profileId: dto.profileId,
     };
-    await this.collection().doc(uid).set(user);
+    await this.repositoryFactory.usersUnscoped().save(uid, user);
     return user;
   }
 
   async deleteUser(uid: string): Promise<void> {
-    await this.getUserById(uid);
+    await this.repositoryFactory.usersUnscoped().findOneOrFail(uid);
     await this.firebaseService.getAuth().deleteUser(uid);
-    await this.collection().doc(uid).delete();
+    await this.repositoryFactory.usersUnscoped().delete(uid);
   }
 
   /** Idempotent seed used by the bootstrap script. Returns the Firebase uid. */
@@ -138,7 +165,7 @@ export class UsersService {
       block: params.block,
       profileId: params.profileId,
     };
-    await this.collection().doc(uid).set(user);
+    await this.repositoryFactory.usersUnscoped().save(uid, user);
     return uid;
   }
 

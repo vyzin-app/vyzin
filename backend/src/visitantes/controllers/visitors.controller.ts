@@ -25,14 +25,20 @@ export class VisitorsController {
 
   @Get()
   @RequireFunction(AppFunction.VISITORS_READ)
-  async getVisitors(@Query() filter: FilterVisitorsDTO) {
-    return await this.visitorsService.getVisitors(filter);
+  async getVisitors(
+    @Query() filter: FilterVisitorsDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.visitorsService.getVisitors(filter, user);
   }
 
   @Get(':id')
   @RequireFunction(AppFunction.VISITORS_READ)
-  async getVisitor(@Param('id') id: string) {
-    return await this.visitorsService.getVisitorById(id);
+  async getVisitor(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.visitorsService.getVisitorById(id, user);
   }
 
   @Post()
@@ -46,8 +52,12 @@ export class VisitorsController {
 
   @Put(':id')
   @RequireFunction(AppFunction.VISITORS_MANAGE)
-  async updateVisitor(@Param('id') id: string, @Body() visitor: VisitorDTO) {
-    return await this.visitorsService.updateVisitor(id, visitor);
+  async updateVisitor(
+    @Param('id') id: string,
+    @Body() visitor: VisitorDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.visitorsService.updateVisitor(id, visitor, user);
   }
 
   @Patch(':id/status')
@@ -63,7 +73,10 @@ export class VisitorsController {
   @Delete(':id')
   @HttpCode(204)
   @RequireFunction(AppFunction.VISITORS_MANAGE)
-  async deleteVisitor(@Param('id') id: string) {
-    await this.visitorsService.deleteVisitor(id);
+  async deleteVisitor(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.visitorsService.deleteVisitor(id, user);
   }
 }
