@@ -71,7 +71,7 @@ Pessoa 1 → Pessoa 2 → Pessoa 3 → Pessoa 4 → Pessoa 5 → Pessoa 6
 
 ---
 
-## Pessoa 1 — Visão geral e arquitetura React
+## Pessoa 1 — Visão geral e arquitetura React - Thiago Renó
 
 | | |
 |---|---|
@@ -109,7 +109,7 @@ Separação por responsabilidade: rota, UI de negócio e estado global ficam em 
 
 ---
 
-## Pessoa 2 — Login, sessão e proteção de rotas
+## Pessoa 2 — Login, sessão e proteção de rotas - Pedro Viegas
 
 | | |
 |---|---|
@@ -158,7 +158,7 @@ Separação por responsabilidade: rota, UI de negócio e estado global ficam em 
 
 ---
 
-## Pessoa 3 — CRUD 1: Visitantes
+## Pessoa 3 — CRUD 1: Visitantes - Matheus Albino
 
 | | |
 |---|---|
@@ -203,7 +203,7 @@ Na renderização da lista de visitantes dentro de `Visitantes.tsx`.
 
 ---
 
-## Pessoa 4 — CRUD 2: Reservas
+## Pessoa 4 — CRUD 2: Reservas - Sarah Mesquita
 
 | | |
 |---|---|
@@ -249,7 +249,7 @@ Destaque: componente **`ReservationCard`** (reutilizável).
 
 ---
 
-## Pessoa 5 — CRUD 3: Usuários + estado global
+## Pessoa 5 — CRUD 3: Usuários + estado global - Wemerson Silva
 
 | | |
 |---|---|
@@ -298,7 +298,7 @@ Repositories em `frontend/src/app/data/` chamam a API; o backend grava no Firest
 
 ---
 
-## Pessoa 6 — Relatório com JOIN + encerramento
+## Pessoa 6 — Relatório com JOIN + encerramento - Victor Ruinivan
 
 | | |
 |---|---|
