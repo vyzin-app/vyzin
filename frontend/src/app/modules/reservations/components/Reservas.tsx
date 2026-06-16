@@ -57,25 +57,10 @@ import {
 import { reservationRepository } from '@/app/data/reservationRepository'
 import { visitorRepository } from '@/app/data/visitorRepository'
 import { AvailableSlot } from '@/app/domain/reservation'
+import { ReservationSpace } from '@/app/domain/reservationSpace'
+import { todayISO } from '@/app/utils/dates'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const SPACES = [
-  { id: 'salao', name: 'Salão de Festas', capacity: 80 },
-  { id: 'churrasqueira1', name: 'Churrasqueira 1', capacity: 20 },
-  { id: 'churrasqueira2', name: 'Churrasqueira 2', capacity: 20 },
-  { id: 'quadra', name: 'Quadra Esportiva', capacity: 30 },
-  { id: 'piscina', name: 'Área da Piscina', capacity: 40 },
-]
-
-// Block duration in hours per space name (UI hint; server is source of truth)
-const BLOCK_CONFIG: Record<string, number> = {
-  'Salão de Festas': 5,
-  'Churrasqueira 1': 5,
-  'Churrasqueira 2': 5,
-  'Quadra Esportiva': 1,
-  'Área da Piscina': 1,
-}
 
 const STATUS_CONFIG: Record<
   Reservation['status'],
@@ -463,9 +448,26 @@ function TimeBlockPicker({
           editingId,
         )
         if (cancelled) return
-        setSlots(schedule)
 
-        const selectionStillValid = schedule.some(
+        // When the chosen date is today, also block time slots that already
+        // started — the backend rejects them, so reflect that in the UI.
+        const now = new Date()
+        const today = todayISO()
+        const nowMinutes = now.getHours() * 60 + now.getMinutes()
+        const adjusted =
+          date === today
+            ? schedule.map((slot) => ({
+                ...slot,
+                available:
+                  slot.available &&
+                  Number(slot.startTime.slice(0, 2)) * 60 +
+                    Number(slot.startTime.slice(3, 5)) >
+                    nowMinutes,
+              }))
+            : schedule
+        setSlots(adjusted)
+
+        const selectionStillValid = adjusted.some(
           (slot) =>
             slot.available &&
             slot.startTime === selectedStart &&
@@ -872,6 +874,14 @@ export function Reservations({
     useState<Reservation | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [form, setForm] = useState<ReservationForm>(EMPTY_FORM)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [spaces, setSpaces] = useState<ReservationSpace[]>([])
+
+  const blockHoursBySpace = useMemo(
+    () =>
+      Object.fromEntries(spaces.map((space) => [space.name, space.blockHours])),
+    [spaces],
+  )
 
   const clearTimeSelection = useCallback(() => {
     setForm((current) => ({ ...current, startTime: '', endTime: '' }))
@@ -929,6 +939,10 @@ export function Reservations({
     return () => clearTimeout(timer)
   }, [loadReservations, loadStats])
 
+  useEffect(() => {
+    void reservationRepository.listSpaces().then(setSpaces)
+  }, [])
+
   const refreshList = useCallback(async () => {
     await Promise.all([loadReservations(), loadStats()])
   }, [loadReservations, loadStats])
@@ -949,6 +963,7 @@ export function Reservations({
   function handleCreate() {
     setEditingReservation(null)
     setForm(EMPTY_FORM)
+    setFormError(null)
     setIsFormDialogOpen(true)
   }
 
@@ -961,6 +976,7 @@ export function Reservations({
       endTime: r.endTime,
       notes: r.notes,
     })
+    setFormError(null)
     setIsFormDialogOpen(true)
   }
 
@@ -974,26 +990,30 @@ export function Reservations({
     setForm((f) => ({ ...f, date, startTime: '', endTime: '' }))
   }
 
-  function handleSave() {
-    if (editingReservation) {
-      updateReservation(editingReservation.id, { ...form }).then(() =>
-        refreshList(),
+  async function handleSave() {
+    setFormError(null)
+    try {
+      if (editingReservation) {
+        await updateReservation(editingReservation.id, { ...form })
+      } else {
+        await addReservation({
+          ...form,
+          status: 'confirmed',
+          createdBy: user?.id ?? '',
+          linkedVisitorIds: [],
+        })
+      }
+      setIsFormDialogOpen(false)
+      await refreshList()
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : 'Erro ao salvar reserva.',
       )
-    } else {
-      addReservation({
-        ...form,
-        status: 'confirmed',
-        createdBy: user?.id ?? '',
-        linkedVisitorIds: [],
-      }).then(() => refreshList())
     }
-    setIsFormDialogOpen(false)
   }
 
   function handleCancel(id: string) {
-    updateReservation(id, { status: 'cancelled', linkedVisitorIds: [] }).then(
-      () => refreshList(),
-    )
+    updateReservation(id, { status: 'cancelled' }).then(() => refreshList())
   }
 
   function confirmDelete() {
@@ -1175,9 +1195,9 @@ export function Reservations({
                     <SelectValue placeholder="Selecione o espaço" />
                   </SelectTrigger>
                   <SelectContent>
-                    {SPACES.map((s) => (
-                      <SelectItem key={s.id} value={s.name}>
-                        {s.name} (até {s.capacity} pessoas)
+                    {spaces.map((s) => (
+                      <SelectItem key={s.name} value={s.name}>
+                        {s.name} (blocos de {s.blockHours}h)
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1189,6 +1209,7 @@ export function Reservations({
                 <Label>Data *</Label>
                 <Input
                   type="date"
+                  min={todayISO()}
                   value={form.date}
                   onChange={(e) => handleDateChange(e.target.value)}
                 />
@@ -1199,7 +1220,7 @@ export function Reservations({
                 <Label>Horário *</Label>
                 {form.space && (
                   <p className="text-xs text-muted-foreground">
-                    Blocos de {BLOCK_CONFIG[form.space] ?? 1}h — clique em um
+                    Blocos de {blockHoursBySpace[form.space] ?? 1}h — clique em um
                     horário disponível
                   </p>
                 )}
@@ -1244,6 +1265,12 @@ export function Reservations({
                 </span>
               </div>
             </div>
+
+            {formError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {formError}
+              </div>
+            )}
 
             <DialogFooter>
               <Button

@@ -42,20 +42,30 @@ export class UsersController {
 
   @Post()
   @RequireFunction(AppFunction.USERS_MANAGE)
-  async create(@Body() dto: CreateUserDTO) {
-    return await this.usersService.createUser(dto);
+  async create(
+    @Body() dto: CreateUserDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.usersService.createUser(dto, user);
   }
 
   @Put(':id')
   @RequireFunction(AppFunction.USERS_MANAGE)
-  async update(@Param('id') id: string, @Body() dto: UpdateUserDTO) {
-    return await this.usersService.updateUser(id, dto);
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDTO,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return await this.usersService.updateUser(id, dto, user);
   }
 
   @Delete(':id')
   @HttpCode(204)
   @RequireFunction(AppFunction.USERS_MANAGE)
-  async delete(@Param('id') id: string) {
-    await this.usersService.deleteUser(id);
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.usersService.deleteUser(id, user);
   }
 }

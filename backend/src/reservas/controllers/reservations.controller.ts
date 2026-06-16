@@ -31,6 +31,12 @@ export class ReservationsController {
     return await this.reservationsService.getReservations(filter, user);
   }
 
+  @Get('spaces')
+  @RequireFunction(AppFunction.RESERVATIONS_READ)
+  getSpaces() {
+    return this.reservationsService.getSpaces();
+  }
+
   @Get('available-slots')
   @RequireFunction(AppFunction.RESERVATIONS_READ)
   async getAvailableSlots(@Query() filter: FilterAvailableSlotsDTO) {

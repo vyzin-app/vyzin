@@ -1,41 +1,59 @@
-# Vyzin API - exemplos de requisicoes
-# Use a extensao "REST Client" (VS Code/Cursor) e clique em "Send Request".
-# Backend rodando: `npm run start:dev` (porta 3000). Antes, rode `npm run seed`.
-#
-# AUTENTICACAO: todas as rotas (exceto GET /) exigem um Firebase ID token.
-# Pegue um token logando com o SDK no frontend (localStorage) ou via REST:
-# POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=API_KEY
-# Cole o token em @token abaixo.
+# Vyzin API — exemplos de requisições
+
+Use a extensão **REST Client** (VS Code/Cursor) e clique em **Send Request**.
+
+**Backend:** `npm run start:dev:local` (emuladores) ou `npm run start:dev` (Firebase real) — porta **3000**.
+
+**Antes:** rode `npm run seed:local` (emuladores) ou `npm run seed` (Firebase real).
+
+---
+
+## Autenticação
+
+A API aceita duas formas:
+
+1. **Cookie `vyzin_session`** (fluxo normal da SPA) — definido após `POST /auth/login`
+2. **Bearer token** — `Authorization: Bearer <Firebase ID token>` (integrações / debug)
+
+> REST Client: após login, algumas versões persistem cookies automaticamente entre requests do mesmo arquivo. Se não persistir, use Bearer ou copie o cookie manualmente.
 
 @baseUrl = http://localhost:3000
-@token = COLE_O_ID_TOKEN_AQUI
 
 ###############################################################################
-# AUTH / CATALOGO
+# AUTH
 ###############################################################################
 
-### Healthcheck (publico)
+### Healthcheck (público)
 GET {{baseUrl}}/
 
-### Dados do usuario logado (perfil + funcoes)
-GET {{baseUrl}}/auth/me
-Authorization: Bearer {{token}}
+### Login — retorna user + profile e seta cookie vyzin_session
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
 
-### Catalogo de funcoes (requer PROFILES_READ)
+{
+  "email": "admin@vyzin.com",
+  "password": "admin123"
+}
+
+### Dados do usuário logado (cookie ou Bearer)
+GET {{baseUrl}}/auth/me
+
+### Logout — limpa cookie
+POST {{baseUrl}}/auth/logout
+
+### Catálogo de funções (requer profiles:read)
 GET {{baseUrl}}/functions
-Authorization: Bearer {{token}}
 
 ###############################################################################
-# PERFIS (/profiles) - requer PROFILES_READ / PROFILES_MANAGE
+# PERFIS (/profiles)
 ###############################################################################
 
 ### Listar perfis
 GET {{baseUrl}}/profiles
-Authorization: Bearer {{token}}
 
 ### Criar perfil
 POST {{baseUrl}}/profiles
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -46,7 +64,6 @@ Content-Type: application/json
 
 ### Atualizar perfil
 PUT {{baseUrl}}/profiles/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -57,19 +74,16 @@ Content-Type: application/json
 
 ### Excluir perfil
 DELETE {{baseUrl}}/profiles/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
 
 ###############################################################################
-# USUARIOS (/users) - requer USERS_READ / USERS_MANAGE
+# USUÁRIOS (/users)
 ###############################################################################
 
 ### Listar usuarios
 GET {{baseUrl}}/users
-Authorization: Bearer {{token}}
 
-### Criar usuario (provisiona no Firebase Auth + claim profileId)
+### Criar usuario (provisiona Firebase Auth + Firestore)
 POST {{baseUrl}}/users
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -85,7 +99,6 @@ Content-Type: application/json
 
 ### Atualizar usuario
 PUT {{baseUrl}}/users/COLE_O_UID_AQUI
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -99,15 +112,22 @@ Content-Type: application/json
 
 ### Excluir usuario
 DELETE {{baseUrl}}/users/COLE_O_UID_AQUI
-Authorization: Bearer {{token}}
 
 ###############################################################################
 # RESERVAS (/reservations)
 ###############################################################################
 
-### Criar reserva
+### Listar espacos e duracao de blocos
+GET {{baseUrl}}/reservations/spaces
+
+### Horarios disponiveis de um espaco em uma data
+GET {{baseUrl}}/reservations/available-slots?space=Sal%C3%A3o%20de%20Festas&date=2026-07-20
+
+### Listar / filtrar reservas
+GET {{baseUrl}}/reservations?status=confirmed&date=2026-07-20&search=salao
+
+### Criar reserva (data nao pode ser passada)
 POST {{baseUrl}}/reservations
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -120,28 +140,11 @@ Content-Type: application/json
   "linkedVisitorIds": []
 }
 
-### Horarios disponiveis de um espaco em uma data
-GET {{baseUrl}}/reservations/available-slots?space=Sal%C3%A3o%20de%20Festas&date=2026-07-20
-Authorization: Bearer {{token}}
-
-### Listar / filtrar reservas
-GET {{baseUrl}}/reservations?status=confirmed&date=2026-07-20&search=salao
-Authorization: Bearer {{token}}
-
-### Vincular visitante a reserva (requer VISITORS_MANAGE)
-POST {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
-Authorization: Bearer {{token}}
-
-### Desvincular visitante da reserva
-DELETE {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
-Authorization: Bearer {{token}}
-
-### Buscar / atualizar / excluir
+### Buscar reserva
 GET {{baseUrl}}/reservations/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
 
+### Atualizar reserva
 PUT {{baseUrl}}/reservations/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -154,16 +157,24 @@ Content-Type: application/json
   "linkedVisitorIds": []
 }
 
+### Excluir reserva
 DELETE {{baseUrl}}/reservations/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
+
+### Vincular visitante a reserva (requer visitors:manage)
+POST {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
+
+### Desvincular visitante da reserva
+DELETE {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
 
 ###############################################################################
 # VISITANTES (/visitors)
 ###############################################################################
 
-### Criar visitante
+### Listar / filtrar
+GET {{baseUrl}}/visitors?status=waiting&search=ana
+
+### Criar visitante (data/horario nao podem ser passados)
 POST {{baseUrl}}/visitors
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -178,13 +189,8 @@ Content-Type: application/json
   "visitType": "apartment"
 }
 
-### Listar / filtrar
-GET {{baseUrl}}/visitors?status=waiting&search=ana
-Authorization: Bearer {{token}}
-
-### Workflow de status (autorizar/negar/saida) - requer VISITORS_WORKFLOW
+### Workflow de status (autorizar/negar/saida) — requer visitors:workflow
 PATCH {{baseUrl}}/visitors/COLE_O_ID_AQUI/status
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -193,15 +199,50 @@ Content-Type: application/json
 
 ### Excluir visitante
 DELETE {{baseUrl}}/visitors/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
+
+###############################################################################
+# PRÉ-AUTORIZADOS (/pre-authorizations)
+###############################################################################
+
+### Listar pre-autorizados (morador ve apenas os proprios)
+GET {{baseUrl}}/pre-authorizations
+
+### Criar pre-autorizado
+POST {{baseUrl}}/pre-authorizations
+Content-Type: application/json
+
+{
+  "name": "Maria Diarista",
+  "cpf": "111.222.333-44",
+  "phone": "(61) 98888-7777",
+  "type": "cleaner",
+  "notes": "Toda terca e quinta"
+}
+
+### Atualizar
+PUT {{baseUrl}}/pre-authorizations/COLE_O_ID_AQUI
+Content-Type: application/json
+
+{
+  "name": "Maria Diarista",
+  "cpf": "111.222.333-44",
+  "phone": "(61) 98888-7777",
+  "type": "cleaner",
+  "notes": "Horario atualizado"
+}
+
+### Excluir
+DELETE {{baseUrl}}/pre-authorizations/COLE_O_ID_AQUI
 
 ###############################################################################
 # MURAL (/announcements)
 ###############################################################################
 
+### Listar / filtrar
+GET {{baseUrl}}/announcements?category=maintenance
+
 ### Criar aviso
 POST {{baseUrl}}/announcements
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -212,13 +253,8 @@ Content-Type: application/json
   "isImportant": false
 }
 
-### Listar / filtrar
-GET {{baseUrl}}/announcements?category=maintenance
-Authorization: Bearer {{token}}
-
-### Atualizar / excluir
+### Atualizar aviso
 PUT {{baseUrl}}/announcements/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -229,17 +265,42 @@ Content-Type: application/json
   "isImportant": true
 }
 
+### Excluir aviso
 DELETE {{baseUrl}}/announcements/COLE_O_ID_AQUI
-Authorization: Bearer {{token}}
 
 ###############################################################################
-# RELATORIOS (/reports) - requer REPORTS_READ
+# INFORMAÇÕES DO CONDOMÍNIO (/information)
+###############################################################################
+
+### Obter informacoes (documento condoInformation/default)
+GET {{baseUrl}}/information
+
+### Atualizar informacoes (requer information:edit)
+PUT {{baseUrl}}/information
+Content-Type: application/json
+
+{
+  "name": "Residencial Vyzin",
+  "address": {
+    "street": "Rua das Flores, 100",
+    "neighborhood": "Centro",
+    "city": "Brasilia",
+    "state": "DF",
+    "zipCode": "70000-000"
+  },
+  "contacts": [
+    { "label": "Portaria", "phone": "(61) 3333-0000" }
+  ],
+  "rules": ["Silencio apos 22h", "Uso de mascara na piscina"],
+  "documents": []
+}
+
+###############################################################################
+# RELATÓRIOS (/reports)
 ###############################################################################
 
 ### Relatorio operacional (joins reservas + visitantes + usuarios + perfis)
 GET {{baseUrl}}/reports/operational?from=2026-01-01&to=2026-12-31
-Authorization: Bearer {{token}}
 
 ### Relatorio com filtros
 GET {{baseUrl}}/reports/operational?from=2026-06-01&to=2026-06-30&reservationStatus=confirmed&space=Churrasqueira%202&search=maria
-Authorization: Bearer {{token}}

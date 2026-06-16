@@ -11,10 +11,8 @@ import { authRepository } from '../data/authRepository'
 import { AppFunction } from '../domain/appFunction'
 import { Profile } from '../domain/profile'
 import { User, UserRole } from '../domain/user'
-import { AuthService } from '../services/auth/AuthService'
-import { firebaseAuthService } from '../services/auth/FirebaseAuthService'
+import { setUnauthorizedHandler } from '../infra/http/api'
 
-// Re-exported so existing screens can keep importing these types from here.
 export type { User, UserRole }
 
 interface AuthContextType {
@@ -30,13 +28,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-interface AuthProviderProps {
-  children: ReactNode
-  /** Injectable for testing or swapping the auth strategy (defaults to Firebase). */
-  authService?: AuthService
-}
-
-/** Seeded system profiles map to a cosmetic role used only for dashboard copy. */
 function roleFromProfileId(profileId: string): UserRole {
   if (
     profileId === 'admin' ||
@@ -48,50 +39,70 @@ function roleFromProfileId(profileId: string): UserRole {
   return 'resident'
 }
 
-export function AuthProvider({
-  children,
-  authService = firebaseAuthService,
-}: AuthProviderProps) {
+function mapAccountToUser(account: AuthMeResponseUser): User {
+  return {
+    id: account.uid,
+    name: account.name,
+    email: account.email,
+    cpf: account.cpf,
+    phone: account.phone,
+    apartment: account.apartment,
+    block: account.block,
+    profileId: account.profileId,
+    role: roleFromProfileId(account.profileId),
+  }
+}
+
+type AuthMeResponseUser = {
+  uid: string
+  name: string
+  email: string
+  cpf: string
+  phone: string
+  apartment?: string
+  block?: string
+  profileId: string
+}
+
+function applySession(
+  account: AuthMeResponseUser,
+  accountProfile: Profile,
+  setUser: (user: User | null) => void,
+  setProfile: (profile: Profile | null) => void,
+) {
+  setUser(mapAccountToUser(account))
+  setProfile(accountProfile)
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const clearSession = useCallback(() => {
+    setUser(null)
+    setProfile(null)
+  }, [])
 
   const loadCurrentUser = useCallback(async () => {
     try {
       const { user: account, profile: accountProfile } =
         await authRepository.me()
-      setUser({
-        id: account.uid,
-        name: account.name,
-        email: account.email,
-        cpf: account.cpf,
-        phone: account.phone,
-        apartment: account.apartment,
-        block: account.block,
-        profileId: account.profileId,
-        role: roleFromProfileId(account.profileId),
-      })
-      setProfile(accountProfile)
+      applySession(account, accountProfile, setUser, setProfile)
     } catch {
-      // Authenticated in Firebase but no backend profile resolved — sign out.
-      await authService.logout()
-      setUser(null)
-      setProfile(null)
+      clearSession()
     }
-  }, [authService])
+  }, [clearSession])
 
   useEffect(() => {
-    const unsubscribe = authService.onAuthStateChanged(async (isAuth) => {
-      if (isAuth) {
-        await loadCurrentUser()
-      } else {
-        setUser(null)
-        setProfile(null)
-      }
-      setLoading(false)
+    setUnauthorizedHandler(() => {
+      clearSession()
     })
-    return unsubscribe
-  }, [authService, loadCurrentUser])
+  }, [clearSession])
+
+  useEffect(() => {
+    void loadCurrentUser().finally(() => setLoading(false))
+  }, [loadCurrentUser])
 
   const functions = useMemo<AppFunction[]>(
     () => profile?.functions ?? [],
@@ -106,17 +117,20 @@ export function AuthProvider({
       loading,
       isAuthenticated: user !== null,
       login: async (email, password) => {
-        await authService.login(email, password)
-        await loadCurrentUser()
+        const { user: account, profile: accountProfile } =
+          await authRepository.login(email, password)
+        applySession(account, accountProfile, setUser, setProfile)
       },
       logout: async () => {
-        await authService.logout()
-        setUser(null)
-        setProfile(null)
+        try {
+          await authRepository.logout()
+        } finally {
+          clearSession()
+        }
       },
       can: (fn: AppFunction) => functions.includes(fn),
     }),
-    [user, profile, functions, loading, authService, loadCurrentUser],
+    [user, profile, functions, loading, clearSession],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

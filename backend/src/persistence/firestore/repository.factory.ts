@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { FirebaseService } from '../../firebase/firebase.service';
 import type { Announcement } from '../../mural/entities/announcement.entity';
+import type { CondoInformation } from '../../informacoes/entities/condo-information.entity';
+import type { PreAuthorization } from '../../pre-authorizations/entities/pre-authorization.entity';
 import type { Profile } from '../../profiles/entities/profile.entity';
 import type { Reservation } from '../../reservas/entities/reservations.entity';
 import type { User } from '../../users/entities/user.entity';
 import type { Visitor } from '../../visitantes/entities/visitor.entity';
 import {
   ANNOUNCEMENT_COLLECTION,
+  INFORMATION_COLLECTION,
+  PRE_AUTHORIZATION_COLLECTION,
   PROFILE_COLLECTION,
   RESERVATION_COLLECTION,
   USER_COLLECTION,
@@ -16,6 +20,7 @@ import type { AccessContext } from '../interfaces/access-context.interface';
 import type { CollectionDefinition } from '../interfaces/collection-definition.interface';
 import type { ISecurityScope } from '../interfaces/security-scope.interface';
 import { AnnouncementSecurityScope } from '../scopes/announcement.security-scope';
+import { PreAuthorizationSecurityScope } from '../scopes/pre-authorization.security-scope';
 import { ProfileSecurityScope } from '../scopes/profile.security-scope';
 import { ReservationSecurityScope } from '../scopes/reservation.security-scope';
 import { UserSecurityScope } from '../scopes/user.security-scope';
@@ -36,6 +41,7 @@ export class RepositoryFactory {
     private readonly announcementScope: AnnouncementSecurityScope,
     private readonly userScope: UserSecurityScope,
     private readonly profileScope: ProfileSecurityScope,
+    private readonly preAuthorizationScope: PreAuthorizationSecurityScope,
   ) {}
 
   reservations(context: AccessContext): ScopedRepository<Reservation> {
@@ -80,6 +86,22 @@ export class RepositoryFactory {
 
   profilesUnscoped(): FirestoreRepository<Profile> {
     return this.unscoped(PROFILE_COLLECTION);
+  }
+
+  informationUnscoped(): FirestoreRepository<CondoInformation> {
+    return this.unscoped(INFORMATION_COLLECTION);
+  }
+
+  preAuthorizations(context: AccessContext): ScopedRepository<PreAuthorization> {
+    return this.scoped(
+      PRE_AUTHORIZATION_COLLECTION,
+      this.preAuthorizationScope,
+      context,
+    );
+  }
+
+  preAuthorizationsUnscoped(): FirestoreRepository<PreAuthorization> {
+    return this.unscoped(PRE_AUTHORIZATION_COLLECTION);
   }
 
   private unscoped<T>(

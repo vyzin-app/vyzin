@@ -1,4 +1,5 @@
 import { AvailableSlot, Reservation } from '../domain/reservation'
+import { ReservationSpace } from '../domain/reservationSpace'
 import { buildQueryString } from '../infra/http/queryParams'
 import { apiClient } from '../infra/http/api'
 import { ReservationListFilter } from '../domain/listFilters'
@@ -7,6 +8,8 @@ export type ReservationInput = Omit<Reservation, 'id' | 'createdBy'>
 
 export interface ReservationRepository {
   list(filter?: ReservationListFilter): Promise<Reservation[]>
+  get(id: string): Promise<Reservation>
+  listSpaces(): Promise<ReservationSpace[]>
   getAvailableSlots(
     space: string,
     date: string,
@@ -33,6 +36,15 @@ class HttpReservationRepository implements ReservationRepository {
     })
     const data = await apiClient.get<Reservation[]>(`/reservations${query}`)
     return data.map(normalize)
+  }
+
+  async get(id: string): Promise<Reservation> {
+    const reservation = await apiClient.get<Reservation>(`/reservations/${id}`)
+    return normalize(reservation)
+  }
+
+  listSpaces(): Promise<ReservationSpace[]> {
+    return apiClient.get<ReservationSpace[]>('/reservations/spaces')
   }
 
   getAvailableSlots(

@@ -1,6 +1,6 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card } from '@/app/components/ui/card'
 import { Button } from '@/app/components/ui/button'
-import { Badge } from '@/app/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs'
 import {
   Info,
@@ -15,161 +15,90 @@ import {
   Download,
   ExternalLink,
   Pencil,
+  type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '@/app/contexts/AuthContext'
 import { getUserPermissions } from '@/app/utils/permissions'
+import { informationRepository } from '@/app/data/informationRepository'
+import type { CondoInformation, CondoContact } from '@/app/domain/information'
+import { InformacoesEditDialog } from './InformacoesEditDialog'
+
+const RULE_ICONS: Record<string, LucideIcon> = {
+  Clock,
+  Building2,
+  Shield,
+  AlertTriangle,
+}
+
+function groupContactsByCategory(contacts: CondoContact[]) {
+  const map = new Map<string, CondoContact[]>()
+  for (const contact of contacts) {
+    const list = map.get(contact.category) ?? []
+    list.push(contact)
+    map.set(contact.category, list)
+  }
+  return Array.from(map.entries()).map(([category, items]) => ({
+    category,
+    items,
+  }))
+}
 
 export function Informacoes() {
   const { functions } = useAuth()
   const permissions = getUserPermissions(functions)
   const canEdit = permissions.canEditInformation
 
-  const contacts = [
-    {
-      category: 'Administração',
-      items: [
-        {
-          name: 'Administradora Silva & Santos',
-          phone: '(61) 3456-7890',
-          email: 'contato@silvaesantos.com.br',
-          hours: 'Seg-Sex: 9h às 18h',
-        },
-        {
-          name: 'Síndico - João Santos',
-          phone: '(61) 98765-4321',
-          email: 'sindico@condominio.com',
-          hours: 'Plantão: Terça 19h-21h',
-        },
-      ],
-    },
-    {
-      category: 'Emergências',
-      items: [
-        {
-          name: 'Portaria 24h',
-          phone: '(61) 3456-7891',
-          email: 'portaria@condominio.com',
-          hours: '24 horas',
-        },
-        {
-          name: 'Bombeiros',
-          phone: '193',
-          email: '-',
-          hours: '24 horas',
-        },
-        {
-          name: 'Polícia',
-          phone: '190',
-          email: '-',
-          hours: '24 horas',
-        },
-        {
-          name: 'SAMU',
-          phone: '192',
-          email: '-',
-          hours: '24 horas',
-        },
-      ],
-    },
-    {
-      category: 'Manutenção',
-      items: [
-        {
-          name: 'Zelador - Carlos',
-          phone: '(61) 98888-7777',
-          email: 'manutencao@condominio.com',
-          hours: 'Seg-Sáb: 8h às 17h',
-        },
-        {
-          name: 'Eletricista de Plantão',
-          phone: '(61) 99999-8888',
-          email: '-',
-          hours: 'Emergências 24h',
-        },
-      ],
-    },
-  ]
+  const [information, setInformation] = useState<CondoInformation | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [isEditOpen, setIsEditOpen] = useState(false)
 
-  const rules = [
-    {
-      category: 'Horários',
-      icon: Clock,
-      items: [
-        'Silêncio obrigatório das 22h às 8h',
-        'Mudanças permitidas apenas das 8h às 17h',
-        'Uso da piscina: 6h às 22h',
-        'Academia: Seg-Sex 6h-22h, Sáb-Dom 8h-18h',
-      ],
-    },
-    {
-      category: 'Áreas Comuns',
-      icon: Building2,
-      items: [
-        'Reserva de churrasqueiras com 48h de antecedência',
-        'Salão de festas: máximo 80 pessoas',
-        'Proibido som automotivo após 22h',
-        'Pets devem circular com guia e focinheira',
-      ],
-    },
-    {
-      category: 'Segurança',
-      icon: Shield,
-      items: [
-        'Visitantes devem ser cadastrados pelo morador',
-        'Acesso às garagens apenas com controle',
-        'Proibido estacionar em vagas de visitantes',
-        'Câmeras de segurança 24h em operação',
-      ],
-    },
-    {
-      category: 'Lixo e Reciclagem',
-      icon: AlertTriangle,
-      items: [
-        'Lixo comum: todos os dias até 20h',
-        'Reciclagem: terças e quintas',
-        'Lixo orgânico: sacos bem fechados',
-        'Eletrônicos: ponto de coleta na portaria',
-      ],
-    },
-  ]
+  const loadInformation = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await informationRepository.get()
+      setInformation(data)
+    } catch {
+      setError('Não foi possível carregar as informações do condomínio.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const documents = [
-    {
-      name: 'Regimento Interno',
-      description: 'Normas e regulamentos do condomínio',
-      size: '2.3 MB',
-      updated: 'Janeiro 2026',
-    },
-    {
-      name: 'Convenção do Condomínio',
-      description: 'Documento de constituição e normas gerais',
-      size: '1.8 MB',
-      updated: 'Dezembro 2025',
-    },
-    {
-      name: 'Ata da Última Assembleia',
-      description: 'Decisões da assembleia de Dezembro/2025',
-      size: '856 KB',
-      updated: 'Dezembro 2025',
-    },
-    {
-      name: 'Manual de Boas Práticas',
-      description: 'Guia de convivência e uso das áreas comuns',
-      size: '1.2 MB',
-      updated: 'Novembro 2025',
-    },
-    {
-      name: 'Tabela de Multas',
-      description: 'Valores de multas por infrações',
-      size: '524 KB',
-      updated: 'Janeiro 2026',
-    },
-  ]
+  useEffect(() => {
+    void loadInformation()
+  }, [loadInformation])
+
+  const contactSections = useMemo(
+    () => groupContactsByCategory(information?.contacts ?? []),
+    [information?.contacts],
+  )
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background p-6 text-muted-foreground">
+        Carregando informações…
+      </div>
+    )
+  }
+
+  if (error || !information) {
+    return (
+      <div className="min-h-screen bg-background p-6">
+        <p className="text-destructive">{error ?? 'Dados indisponíveis.'}</p>
+        <Button className="mt-4" variant="outline" onClick={() => void loadInformation()}>
+          Tentar novamente
+        </Button>
+      </div>
+    )
+  }
+
+  const { rules, documents, address, notice } = information
 
   return (
     <div className="min-h-screen bg-background">
       <div className="p-6 space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-foreground">
@@ -179,20 +108,31 @@ export function Informacoes() {
               Regras, contatos e documentos importantes
             </p>
           </div>
+          {canEdit && information && (
+            <Button onClick={() => setIsEditOpen(true)}>
+              <Pencil className="w-4 h-4 mr-2" />
+              Editar
+            </Button>
+          )}
         </div>
 
         {canEdit && (
           <div className="flex items-center gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20 text-sm text-muted-foreground">
-            <Pencil className="w-4 h-4 text-primary flex-shrink-0" />
+            <Info className="w-4 h-4 text-primary flex-shrink-0" />
             <span>
-              Você tem permissão para editar informações. A persistência no
-              backend será adicionada em uma próxima versão; por enquanto o
-              conteúdo é estático.
+              Você pode editar contatos, regras, documentos e endereço. As
+              alterações são salvas no banco de dados do condomínio.
             </span>
           </div>
         )}
 
-        {/* Tabs */}
+        <InformacoesEditDialog
+          open={isEditOpen}
+          onOpenChange={setIsEditOpen}
+          information={information}
+          onSaved={setInformation}
+        />
+
         <Tabs defaultValue="contacts" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="contacts">Contatos</TabsTrigger>
@@ -200,17 +140,14 @@ export function Informacoes() {
             <TabsTrigger value="documents">Documentos</TabsTrigger>
           </TabsList>
 
-          {/* Contacts */}
           <TabsContent value="contacts" className="space-y-6">
-            {contacts.map((section) => (
+            {contactSections.map((section) => (
               <div key={section.category}>
-                <h3 className="text-lg font-semibold mb-4">
-                  {section.category}
-                </h3>
+                <h3 className="text-lg font-semibold mb-4">{section.category}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {section.items.map((contact, index) => (
+                  {section.items.map((contact) => (
                     <Card
-                      key={index}
+                      key={contact.id}
                       className="p-6 hover:shadow-lg transition-shadow"
                     >
                       <h4 className="font-semibold mb-4">{contact.name}</h4>
@@ -261,7 +198,6 @@ export function Informacoes() {
               </div>
             ))}
 
-            {/* Condominium Address */}
             <div>
               <h3 className="text-lg font-semibold mb-4">
                 Endereço do Condomínio
@@ -272,43 +208,39 @@ export function Informacoes() {
                     <MapPin className="w-6 h-6 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-semibold mb-4">Residencial Vyzin</h4>
+                    <h4 className="font-semibold mb-4">{address.name}</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">
-                          Rua
-                        </p>
-                        <p className="font-medium">Rua das Flores</p>
+                        <p className="text-xs text-muted-foreground mb-1">Rua</p>
+                        <p className="font-medium">{address.street}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">
                           Número
                         </p>
-                        <p className="font-medium">1234</p>
+                        <p className="font-medium">{address.number}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">
                           Bairro
                         </p>
-                        <p className="font-medium">Jardim Primavera</p>
+                        <p className="font-medium">{address.neighborhood}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">
                           Cidade
                         </p>
-                        <p className="font-medium">Brasília</p>
+                        <p className="font-medium">{address.city}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground mb-1">
                           Estado
                         </p>
-                        <p className="font-medium">DF</p>
+                        <p className="font-medium">{address.state}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground mb-1">
-                          CEP
-                        </p>
-                        <p className="font-medium">01234-567</p>
+                        <p className="text-xs text-muted-foreground mb-1">CEP</p>
+                        <p className="font-medium">{address.zipCode}</p>
                       </div>
                     </div>
                     <Button variant="outline">
@@ -321,20 +253,17 @@ export function Informacoes() {
             </div>
           </TabsContent>
 
-          {/* Rules */}
           <TabsContent value="rules" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {rules.map((section) => {
-                const Icon = section.icon
+                const Icon = RULE_ICONS[section.icon] ?? Info
                 return (
-                  <Card key={section.category} className="p-6">
+                  <Card key={section.id} className="p-6">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                         <Icon className="w-5 h-5 text-primary" />
                       </div>
-                      <h3 className="text-lg font-semibold">
-                        {section.category}
-                      </h3>
+                      <h3 className="text-lg font-semibold">{section.category}</h3>
                     </div>
                     <ul className="space-y-3">
                       {section.items.map((item, index) => (
@@ -349,28 +278,21 @@ export function Informacoes() {
               })}
             </div>
 
-            {/* Important Notice */}
-            <Card className="p-6 bg-orange-500/5 border-orange-500/20">
-              <div className="flex gap-4">
-                <div className="w-12 h-12 bg-orange-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <AlertTriangle className="w-6 h-6 text-orange-500" />
+            {notice && (
+              <Card className="p-6 bg-orange-500/5 border-orange-500/20">
+                <div className="flex gap-4">
+                  <div className="w-12 h-12 bg-orange-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-semibold mb-2">Importante</h4>
+                    <p className="text-sm text-muted-foreground">{notice}</p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <h4 className="font-semibold mb-2">Importante</h4>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    O descumprimento das regras do condomínio está sujeito a
-                    multas conforme previsto na convenção. Em caso de dúvidas,
-                    consulte o síndico ou a administração.
-                  </p>
-                  <Button variant="outline" size="sm">
-                    Ver Tabela de Multas
-                  </Button>
-                </div>
-              </div>
-            </Card>
+              </Card>
+            )}
           </TabsContent>
 
-          {/* Documents */}
           <TabsContent value="documents" className="space-y-4">
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-muted-foreground">
@@ -379,9 +301,9 @@ export function Informacoes() {
             </div>
 
             <div className="grid grid-cols-1 gap-4">
-              {documents.map((doc, index) => (
+              {documents.map((doc) => (
                 <Card
-                  key={index}
+                  key={doc.id}
                   className="p-6 hover:shadow-lg transition-shadow"
                 >
                   <div className="flex items-start gap-4">
@@ -400,16 +322,36 @@ export function Informacoes() {
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm">
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        Visualizar
-                      </Button>
+                      {doc.url ? (
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={doc.url} target="_blank" rel="noreferrer">
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            Visualizar
+                          </a>
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" disabled>
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          Visualizar
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         className="bg-primary hover:bg-primary/90"
+                        disabled={!doc.url}
+                        asChild={Boolean(doc.url)}
                       >
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
+                        {doc.url ? (
+                          <a href={doc.url} download>
+                            <Download className="w-4 h-4 mr-2" />
+                            Download
+                          </a>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4 mr-2" />
+                            Download
+                          </>
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -417,7 +359,6 @@ export function Informacoes() {
               ))}
             </div>
 
-            {/* Help Section */}
             <Card className="p-6 bg-blue-500/5 border-blue-500/20 mt-6">
               <div className="flex gap-4">
                 <div className="w-12 h-12 bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -431,16 +372,6 @@ export function Informacoes() {
                     Entre em contato com a administração para solicitar outros
                     documentos ou esclarecimentos sobre as normas do condomínio.
                   </p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
-                      <Mail className="w-4 h-4 mr-2" />
-                      Enviar E-mail
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Phone className="w-4 h-4 mr-2" />
-                      Ligar
-                    </Button>
-                  </div>
                 </div>
               </div>
             </Card>

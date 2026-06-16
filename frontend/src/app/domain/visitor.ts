@@ -13,6 +13,13 @@ export interface Visitor {
   notes: string
   visitType: VisitType
   status: VisitorStatus
+  /** Owner of the record: who registered the visitor (set by the server). */
+  createdBy?: string
   authorizedBy: string
   exitTime?: string
+  // Resolved display fields returned by the API (read-only).
+  createdByName?: string
+  createdByDisplay?: string
+  authorizedByName?: string
+  authorizedByDisplay?: string
 }

@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -64,7 +65,11 @@ export class UsersService {
     return user;
   }
 
-  async createUser(dto: CreateUserDTO): Promise<User> {
+  async createUser(
+    dto: CreateUserDTO,
+    currentUser?: AuthenticatedUser,
+  ): Promise<User> {
+    this.assertCanManageProfile(currentUser, dto.profileId);
     await this.profilesService.get(dto.profileId);
 
     let uid: string;
@@ -97,10 +102,15 @@ export class UsersService {
     return user;
   }
 
-  async updateUser(uid: string, dto: UpdateUserDTO): Promise<User> {
+  async updateUser(
+    uid: string,
+    dto: UpdateUserDTO,
+    currentUser?: AuthenticatedUser,
+  ): Promise<User> {
     const existing = await this.repositoryFactory
       .usersUnscoped()
       .findOneOrFail(uid);
+    this.assertCanManageProfile(currentUser, dto.profileId, existing);
     await this.profilesService.get(dto.profileId);
 
     if (dto.profileId !== existing.profileId) {
@@ -123,8 +133,11 @@ export class UsersService {
     return user;
   }
 
-  async deleteUser(uid: string): Promise<void> {
-    await this.repositoryFactory.usersUnscoped().findOneOrFail(uid);
+  async deleteUser(uid: string, currentUser?: AuthenticatedUser): Promise<void> {
+    const existing = await this.repositoryFactory
+      .usersUnscoped()
+      .findOneOrFail(uid);
+    this.assertCanManageProfile(currentUser, existing.profileId, existing);
     await this.firebaseService.getAuth().deleteUser(uid);
     await this.repositoryFactory.usersUnscoped().delete(uid);
   }
@@ -179,5 +192,28 @@ export class UsersService {
       return 'Ja existe um usuario com este e-mail.';
     }
     return error instanceof Error ? error.message : 'Erro ao criar usuario.';
+  }
+
+  /** Porteiros may only manage users with the resident profile. */
+  private assertCanManageProfile(
+    currentUser: AuthenticatedUser | undefined,
+    targetProfileId: string,
+    existing?: User,
+  ): void {
+    if (!currentUser || currentUser.profileId !== 'doorman') {
+      return;
+    }
+
+    if (targetProfileId !== 'resident') {
+      throw new ForbiddenException(
+        'Porteiros so podem cadastrar ou alterar usuarios com perfil Morador.',
+      );
+    }
+
+    if (existing && existing.profileId !== 'resident') {
+      throw new ForbiddenException(
+        'Voce nao tem permissao para alterar este usuario.',
+      );
+    }
   }
 }

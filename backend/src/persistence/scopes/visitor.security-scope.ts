@@ -7,14 +7,16 @@ import { OwnershipSecurityScope } from './ownership.security-scope';
 export class VisitorSecurityScope extends OwnershipSecurityScope<Visitor> {
   constructor() {
     super({
-      ownerField: 'authorizedBy',
-      getOwnerId: (visitor) => visitor.authorizedBy,
+      // Ownership is the person who registered the visitor, so it survives
+      // workflow decisions (authorize/deny) made by the porteiro/admin.
+      ownerField: 'createdBy',
+      getOwnerId: (visitor) => visitor.createdBy,
       canBypass: (user) =>
         user.functions.includes(AppFunction.VISITORS_WORKFLOW),
       readDeniedMessage:
-        'Voce so pode visualizar visitantes autorizados por voce.',
+        'Voce so pode visualizar visitantes cadastrados por voce.',
       writeDeniedMessage:
-        'Voce so pode alterar visitantes autorizados por voce.',
+        'Voce so pode alterar visitantes cadastrados por voce.',
     });
   }
 }

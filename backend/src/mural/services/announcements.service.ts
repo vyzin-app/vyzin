@@ -4,8 +4,10 @@ import type { QueryFilter } from '../../persistence/interfaces/find-options.inte
 import { RepositoryFactory } from '../../persistence/firestore/repository.factory';
 import { applyTextSearch } from '../../persistence/utils/text-search.util';
 import { AnnouncementDTO } from '../dto/announcement.dto';
+import { AnnouncementResponseDTO } from '../dto/announcement-response.dto';
 import { FilterAnnouncementsDTO } from '../dto/filter-announcements.dto';
 import { Announcement } from '../entities/announcement.entity';
+import type { User } from '../../users/entities/user.entity';
 
 @Injectable()
 export class AnnouncementsService {
@@ -14,7 +16,7 @@ export class AnnouncementsService {
   async getAnnouncements(
     filter: FilterAnnouncementsDTO,
     currentUser: AuthenticatedUser,
-  ): Promise<Announcement[]> {
+  ): Promise<AnnouncementResponseDTO[]> {
     const filters: QueryFilter[] = [];
 
     if (filter.category) {
@@ -37,19 +39,22 @@ export class AnnouncementsService {
       .announcements({ user: currentUser })
       .findMany({ filters });
 
-    return applyTextSearch(results, filter.search, [
+    const enriched = await this.enrichWithAuthors(results);
+    return applyTextSearch(enriched, filter.search, [
       (announcement) => announcement.title,
       (announcement) => announcement.content,
+      (announcement) => announcement.authorDisplay,
     ]);
   }
 
   async getAnnouncementById(
     id: string,
     currentUser: AuthenticatedUser,
-  ): Promise<Announcement> {
-    return this.repositoryFactory
+  ): Promise<AnnouncementResponseDTO> {
+    const announcement = await this.repositoryFactory
       .announcements({ user: currentUser })
       .findOneOrFail(id);
+    return this.enrichOneWithAuthor(announcement);
   }
 
   async createAnnouncement(
@@ -78,7 +83,7 @@ export class AnnouncementsService {
     id: string,
     dto: AnnouncementDTO,
     currentUser: AuthenticatedUser,
-  ): Promise<Announcement> {
+  ): Promise<AnnouncementResponseDTO> {
     const repo = this.repositoryFactory.announcements({ user: currentUser });
     const existing = await repo.findOneOrFail(id);
 
@@ -91,7 +96,58 @@ export class AnnouncementsService {
       isImportant: dto.isImportant ?? existing.isImportant,
     };
 
-    return repo.save(id, announcement);
+    return this.enrichOneWithAuthor(await repo.save(id, announcement));
+  }
+
+  private async enrichOneWithAuthor(
+    announcement: Announcement,
+  ): Promise<AnnouncementResponseDTO> {
+    const [enriched] = await this.enrichWithAuthors([announcement]);
+    return enriched;
+  }
+
+  private async enrichWithAuthors(
+    announcements: Announcement[],
+  ): Promise<AnnouncementResponseDTO[]> {
+    const userMap = await this.loadUsersByIds(
+      announcements.map((item) => item.author),
+    );
+
+    return announcements.map((announcement) => {
+      const authorUser = userMap.get(announcement.author);
+      const legacyLabel =
+        announcement.author.includes(' ') ||
+        announcement.author.includes('@') ||
+        announcement.author.includes('—')
+          ? announcement.author
+          : undefined;
+
+      return {
+        ...announcement,
+        authorName: authorUser?.name ?? legacyLabel ?? 'Usuario desconhecido',
+        authorDisplay:
+          authorUser?.name ??
+          legacyLabel ??
+          authorUser?.email ??
+          'Usuario desconhecido',
+      };
+    });
+  }
+
+  private async loadUsersByIds(uids: string[]): Promise<Map<string, User>> {
+    const uniqueIds = [...new Set(uids.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return new Map();
+    }
+
+    const entries = await Promise.all(
+      uniqueIds.map(async (uid) => {
+        const user = await this.repositoryFactory.usersUnscoped().findById(uid);
+        return user ? ([uid, user] as const) : null;
+      }),
+    );
+
+    return new Map(entries.filter((entry) => entry !== null));
   }
 
   async deleteAnnouncement(

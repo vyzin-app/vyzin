@@ -29,6 +29,7 @@ export const visitorConverter: admin.firestore.FirestoreDataConverter<Visitor> =
         notes: data.notes,
         visitType: data.visitType,
         status: data.status,
+        createdBy: data.createdBy,
         authorizedBy: data.authorizedBy,
       };
       if (data.exitTime !== undefined) {
@@ -51,7 +52,10 @@ export const visitorConverter: admin.firestore.FirestoreDataConverter<Visitor> =
         notes: data.notes as string,
         visitType: data.visitType as VisitTypeEnum,
         status: data.status as VisitorStatusEnum,
-        authorizedBy: data.authorizedBy as string,
+        // Legacy docs stored ownership in `authorizedBy`; fall back to it so
+        // pre-migration visitors keep their original owner.
+        createdBy: (data.createdBy ?? data.authorizedBy ?? '') as string,
+        authorizedBy: (data.authorizedBy ?? '') as string,
         exitTime: data.exitTime as string | undefined,
       };
     },

@@ -2,22 +2,24 @@
 
 **Projeto:** Vyzin — gestão condominial (MVP)  
 **Organização:** monorepo (`frontend/` + `backend/`)  
-**Versão:** integração frontend ↔ backend ↔ Firebase + relatórios + persistence layer  
+**Versão:** integração completa frontend ↔ backend ↔ Firebase + emuladores locais + testes e2e  
 **Última atualização:** junho/2026
 
-Documentos relacionados: [índice](./README.md) · [regras de negócio](./REGRAS_DE_NEGOCIO.md) · [casos de uso](./CASOS_DE_USO.md) · [setup](./SETUP_TESTE.md)
+Documentos relacionados: [índice](./README.md) · [regras de negócio](./REGRAS_DE_NEGOCIO.md) · [mapa do código](./MAPA_DO_CODIGO.md) · [testes](./TESTES.md) · [setup](./SETUP_TESTE.md)
 
 ---
 
 ## 1. Resumo executivo
 
-O Vyzin é uma SPA React que consome uma API REST NestJS. A autenticação usa **Firebase Auth** no cliente; o backend valida o **ID token** e aplica **RBAC dinâmico** via perfis e funções. Persistência no **Firestore** (Admin SDK) através de uma **camada de repositório genérica** com **security scopes** por entidade.
+O Vyzin é uma SPA React que consome uma API REST NestJS. A autenticação usa **Firebase Auth no servidor**: o frontend chama `POST /auth/login`, recebe um **cookie httpOnly** (`vyzin_session`) e nunca instancia o Firebase SDK. O backend valida a sessão, carrega o perfil do Firestore e aplica **RBAC dinâmico** via funções (`AppFunction`) e **security scopes** por entidade.
 
 | Camada | Stack | Porta dev |
 |--------|-------|-----------|
-| Frontend | React, TypeScript, Vite, react-router-dom, Tailwind v4, shadcn/ui, Axios | 3001 |
-| Backend | NestJS, TypeScript, class-validator | 3000 |
-| Nuvem | Firebase Auth + Firestore (`vyzin-app`) | — |
+| Frontend | React 18, TypeScript, Vite, react-router-dom, Tailwind v4, shadcn/ui, Axios | 3001 |
+| Backend | NestJS 11, TypeScript, class-validator, cookie-parser | 3000 |
+| Persistência | Cloud Firestore (Admin SDK) | — |
+| Auth | Firebase Auth (REST no backend + session cookie) | — |
+| Dev local | Firebase Emulators (Auth + Firestore) | 4000 (UI) |
 
 ---
 
@@ -27,19 +29,20 @@ O Vyzin é uma SPA React que consome uma API REST NestJS. A autenticação usa *
 
 ```mermaid
 flowchart TB
-  subgraph client [Cliente]
-    UI[Pages + Modules React]
+  subgraph client [Cliente React]
+    UI[Pages + Modules]
     Router[react-router-dom]
     CTX[AuthContext / CondoDataContext]
-    REPO[Repositories]
-    API_CLIENT[apiClient + firebaseClient]
+    REPO[Repositories HTTP]
+    API[apiClient withCredentials]
   end
 
   subgraph server [Servidor NestJS]
-    GUARDS[Guards globais]
+    GUARDS[FirebaseAuthGuard + FunctionGuard]
     CTRL[Controllers]
     SVC[Services]
     REPO_F[RepositoryFactory + Scopes]
+    AUTH_SRV[AuthSessionService]
     FB_SRV[FirebaseService]
   end
 
@@ -48,9 +51,9 @@ flowchart TB
     FS[(Firestore)]
   end
 
-  UI --> Router --> CTX --> REPO --> API_CLIENT
-  API_CLIENT -->|Bearer token| GUARDS --> CTRL --> SVC --> REPO_F --> FB_SRV --> FS
-  API_CLIENT --> AUTH
+  UI --> Router --> CTX --> REPO --> API
+  API -->|Cookie vyzin_session| GUARDS --> CTRL --> SVC --> REPO_F --> FB_SRV --> FS
+  CTRL --> AUTH_SRV --> AUTH
   GUARDS --> AUTH
 ```
 
@@ -60,33 +63,36 @@ flowchart TB
 vyzin/
 ├── backend/
 │   ├── src/
-│   │   ├── auth/              # Guards, decorators, catálogo AppFunction
-│   │   ├── firebase/          # Admin SDK
-│   │   ├── persistence/       # Repository genérico + security scopes
-│   │   ├── profiles/          # RBAC — perfis
-│   │   ├── users/             # Usuários + Firebase Auth provisioning
-│   │   ├── reservas/          # Reservas, slots, vínculo visitantes
-│   │   ├── visitantes/        # Visitantes + workflow
-│   │   ├── mural/             # Avisos
-│   │   ├── reports/           # Relatório operacional (joins)
-│   │   ├── scripts/seed.ts    # Bootstrap idempotente
+│   │   ├── auth/                 # Sessão, guards, catálogo AppFunction
+│   │   ├── firebase/             # Admin SDK + detecção de emuladores
+│   │   ├── persistence/          # Repository genérico + security scopes
+│   │   ├── profiles/             # RBAC — perfis
+│   │   ├── users/                # Usuários + provisionamento Auth
+│   │   ├── reservas/             # Reservas, slots, espaços, vínculo visitantes
+│   │   ├── visitantes/           # Visitantes + workflow portaria
+│   │   ├── pre-authorizations/   # Pré-autorizados por morador
+│   │   ├── mural/                # Avisos
+│   │   ├── informacoes/          # Dados do condomínio (documento único)
+│   │   ├── reports/              # Relatório operacional (joins)
+│   │   ├── scripts/seed.ts       # Bootstrap idempotente
 │   │   ├── app.module.ts
 │   │   └── main.ts
-│   ├── requests.http
-│   └── firebase-key.json      # Dev local (gitignored)
+│   ├── firebase.json             # Config emuladores
+│   ├── requests.http             # Exemplos REST Client
+│   └── test/                     # E2e (46 testes)
 ├── frontend/
 │   └── src/app/
-│       ├── pages/             # Wrappers finos por rota
-│       ├── modules/           # Componentes de feature por domínio
-│       ├── layouts/           # AppLayout, SegurancaLayout, RootLayout
-│       ├── router/            # paths, guards, AppRouter
-│       ├── components/        # Sidebar, Login, shadcn/ui
-│       ├── contexts/          # AuthContext, CondoDataContext
-│       ├── data/              # Repositories HTTP
-│       ├── domain/            # Tipos TypeScript
-│       ├── infra/             # firebaseClient, apiClient, queryParams
-│       ├── services/          # AuthService, condoQueries
-│       └── utils/             # permissions.ts, displayLabels.ts
+│       ├── pages/                # Wrappers finos por rota
+│       ├── modules/              # Componentes de feature
+│       ├── layouts/              # AppLayout, SegurancaLayout, RootLayout
+│       ├── router/               # paths, guards, AppRouter
+│       ├── components/           # Sidebar, Login, shadcn/ui
+│       ├── contexts/             # AuthContext, CondoDataContext
+│       ├── data/                 # Repositories HTTP
+│       ├── domain/               # Tipos TypeScript
+│       ├── infra/http/           # apiClient, queryParams
+│       ├── services/             # authErrors, condoQueries
+│       └── utils/                # permissions, dates, displayLabels
 └── docs/
 ```
 
@@ -100,7 +106,75 @@ vyzin/
 
 ---
 
-## 3. Camada de persistência (`backend/src/persistence/`)
+## 3. Autenticação e sessão
+
+### 3.1 Fluxo de login
+
+```mermaid
+sequenceDiagram
+  participant UI as Frontend
+  participant API as AuthController
+  participant SVC as AuthSessionService
+  participant FB as Firebase Auth
+
+  UI->>API: POST /auth/login { email, password }
+  SVC->>FB: signInWithPassword (REST Identity Toolkit)
+  FB-->>SVC: idToken
+  SVC->>FB: createSessionCookie(idToken)
+  FB-->>SVC: sessionCookie
+  API-->>UI: Set-Cookie vyzin_session + { user, profile }
+  UI->>API: GET /auth/me (cookie automático via withCredentials)
+```
+
+### 3.2 Cookie de sessão
+
+| Propriedade | Valor |
+|-------------|-------|
+| Nome | `vyzin_session` (constante `SESSION_COOKIE_NAME`) |
+| httpOnly | `true` — inacessível via JavaScript |
+| sameSite | `lax` |
+| secure | `true` apenas em `NODE_ENV=production` |
+| path | `/` |
+
+### 3.3 Validação nas requisições (`FirebaseAuthGuard`)
+
+Ordem de verificação:
+
+1. Rota `@Public()` → permite sem auth (`GET /`, `POST /auth/login`, `POST /auth/logout`)
+2. Cookie `vyzin_session` → `verifySessionCookie`
+3. Header `Authorization: Bearer <idToken>` → `verifyIdToken` (fallback para REST Client / integrações)
+4. Em testes (`NODE_ENV=test`): token `Bearer test:<profileId>` → usuário mock
+
+Após autenticação, `request.user` contém `{ uid, email }`. As **funções** não vêm do token — são carregadas pelo `FunctionGuard` a partir do Firestore.
+
+### 3.4 FunctionGuard — RBAC em tempo real
+
+O `FunctionGuard` **sempre** consulta Firestore:
+
+1. Busca `users/{uid}` → obtém `profileId`
+2. Busca `profiles/{profileId}` → obtém `functions[]`
+3. Valida `@RequireFunction(...)` do handler
+
+Isso garante que alterações de perfil no Firestore surtam efeito sem depender de claims desatualizadas no JWT.
+
+### 3.5 Logout
+
+`POST /auth/logout` revoga refresh tokens no Firebase, limpa o cookie e retorna `{ ok: true }`.
+
+### 3.6 Frontend — AuthContext
+
+| Arquivo | Responsabilidade |
+|---------|------------------|
+| `data/authRepository.ts` | `login`, `logout`, `getMe` |
+| `infra/http/apiClient.ts` | Axios com `withCredentials: true` |
+| `contexts/AuthContext.tsx` | Estado global do usuário logado |
+| `components/Login.tsx` | Formulário de login |
+
+**Removido:** Firebase SDK no cliente (`firebaseClient.ts`, `FirebaseAuthService.ts`).
+
+---
+
+## 4. Camada de persistência (`backend/src/persistence/`)
 
 Abstração genérica sobre Firestore com autorização por entidade.
 
@@ -118,28 +192,30 @@ Abstração genérica sobre Firestore com autorização por entidade.
 
 | Entidade | Scope | Regra resumida |
 |----------|-------|----------------|
-| Reservas | `ReservationSecurityScope` | Morador vê/edita próprias; admin `manage_all`; porteiro lê todas (sem `manage`) |
-| Visitantes | `VisitorSecurityScope` | Por `authorizedBy`; bypass com `visitors:workflow` |
+| Reservas | `ReservationSecurityScope` | Morador vê/edita próprias; admin `manage_all`; porteiro lê todas |
+| Visitantes | `VisitorSecurityScope` | Por `createdBy`; bypass com `visitors:workflow` |
+| Pré-autorizados | `PreAuthorizationSecurityScope` | Por `createdBy` (morador vê só os seus) |
 | Usuários | `UserSecurityScope` | Porteiro vê só moradores |
-| Avisos / Perfis | `OpenSecurityScope` | RBAC apenas via `@RequireFunction` |
+| Avisos / Perfis / Informações | `OpenSecurityScope` | RBAC apenas via `@RequireFunction` |
 
 Services usam `repositoryFactory.reservations({ user })` para operações autenticadas e `*Unscoped()` para joins internos (ex.: lookup de usuário no relatório).
 
 ---
 
-## 4. Backend (NestJS)
+## 5. Backend (NestJS)
 
-### 4.1 Bootstrap — `main.ts`
+### 5.1 Bootstrap — `main.ts`
 
-- CORS habilitado para `FRONTEND_ORIGIN` (padrão `http://localhost:3001`)
+- `cookie-parser` habilitado
+- CORS com `credentials: true` para `FRONTEND_ORIGIN` (padrão `http://localhost:3001`)
 - `ValidationPipe` global (`whitelist`, `transform`)
 - Porta: `process.env.PORT ?? 3000`
 
-### 4.2 Módulo raiz — `app.module.ts`
+### 5.2 Módulo raiz — `app.module.ts`
 
-Importa: `ConfigModule`, `FirebaseModule`, `PersistenceModule`, `AuthModule`, `ProfilesModule`, `UsersModule`, `ReservationsModule`, `VisitorsModule`, `MuralModule`, `ReportsModule`.
+Importa: `ConfigModule`, `FirebaseModule`, `PersistenceModule`, `AuthModule`, `ProfilesModule`, `UsersModule`, `ReservationsModule`, `VisitorsModule`, `PreAuthorizationsModule`, `MuralModule`, `InformationModule`, `ReportsModule`.
 
-### 4.3 Firebase — `FirebaseService`
+### 5.3 Firebase — `FirebaseService`
 
 Credenciais (ordem de prioridade):
 
@@ -147,14 +223,17 @@ Credenciais (ordem de prioridade):
 2. `FIREBASE_SERVICE_ACCOUNT_JSON`
 3. `firebase-key.json` no diretório `backend/`
 
-### 4.4 Autenticação e RBAC
+**Emuladores:** quando `FIRESTORE_EMULATOR_HOST` e/ou `FIREBASE_AUTH_EMULATOR_HOST` estão definidos, o Admin SDK conecta aos emuladores locais (sem credencial real).
 
-#### Guards globais (`AuthModule`)
+Scripts npm:
 
-1. **`FirebaseAuthGuard`** — Bearer token → `verifyIdToken` → `request.user` (`uid`, `email`, `profileId`)
-2. **`FunctionGuard`** — carrega perfil via `ProfilesService.get(profileId)` → `user.functions[]` → valida `@RequireFunction`
+| Script | Uso |
+|--------|-----|
+| `npm run emulators` | Sobe Auth (9099) + Firestore (8080); UI em :4000 |
+| `npm run start:dev:local` | Backend apontando para emuladores |
+| `npm run seed:local` | Seed nos emuladores |
 
-#### Catálogo de funções
+### 5.4 Catálogo de funções
 
 Fonte única: `backend/src/auth/functions/app-functions.ts`  
 Exposta ao frontend: `GET /functions` (requer `profiles:read`)
@@ -166,77 +245,139 @@ Exposta ao frontend: `GET /functions` (requer `profiles:read`)
 | `reservations:manage_all` | CRUD de qualquer reserva |
 | `visitors:read` / `visitors:manage` / `visitors:workflow` | Visitantes |
 | `announcements:read` / `announcements:manage` | Mural |
-| `information:read` / `information:edit` | Informações (UI) |
+| `information:read` / `information:edit` | Informações do condomínio |
 | `users:read` / `users:manage` | Usuários |
 | `profiles:read` / `profiles:manage` | Perfis RBAC |
 | `reports:read` | Relatório operacional |
 
-### 4.5 Modelo de dados (Firestore)
+### 5.5 Modelo de dados (Firestore)
 
-| Coleção | Campos principais | Relacionamentos |
-|---------|-------------------|-----------------|
-| `profiles` | `id`, `name`, `functions[]`, `isSystem` | → `users.profileId` |
-| `users` | `uid`, `name`, `email`, `cpf`, `phone`, `apartment?`, `block?`, `profileId` | claim `{ profileId }` |
-| `reservations` | `space`, `date`, `startTime`, `endTime`, `status`, `createdBy`, `linkedVisitorIds[]` | `createdBy` → user |
-| `visitors` | `name`, `cpf`, `visitType`, `status`, `authorizedBy`, … | `authorizedBy` → user |
-| `announcements` | `title`, `content`, `author`, `category`, `isPinned`, … | `author` string (sem FK) |
+| Coleção | Documento / ID | Campos principais |
+|---------|----------------|-------------------|
+| `profiles` | `{profileId}` | `name`, `functions[]`, `isSystem` |
+| `users` | `{uid}` | `name`, `email`, `cpf`, `phone`, `apartment?`, `block?`, `profileId` |
+| `reservations` | auto | `space`, `date`, `startTime`, `endTime`, `status`, `createdBy`, `linkedVisitorIds[]` |
+| `visitors` | auto | `name`, `cpf`, `visitType`, `status`, `createdBy`, `date`, `time`, … |
+| `preAuthorizations` | auto | `name`, `cpf`, `type`, `createdBy`, … |
+| `announcements` | auto | `title`, `content`, `author`, `category`, `isPinned`, … |
+| `condoInformation` | `default` | contatos, regras, documentos, endereço |
 
-### 4.6 API REST — referência
+### 5.6 API REST — referência completa
 
 **Base:** `http://localhost:3000`  
-**Auth:** `Authorization: Bearer <Firebase ID token>`
+**Auth:** cookie `vyzin_session` (recomendado) ou `Authorization: Bearer <token>`
+
+#### Auth
+
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/auth/login` | pública | Login; retorna user + profile; seta cookie |
+| POST | `/auth/logout` | pública | Limpa sessão |
+| GET | `/auth/me` | autenticado | Usuário + perfil + funções |
+| GET | `/functions` | `profiles:read` | Catálogo de funções |
+
+#### Perfis e usuários
 
 | Método | Rota | Função(ões) |
-|--------|------|---------------|
-| GET | `/` | pública |
-| GET | `/auth/me` | autenticado |
-| GET | `/functions` | `profiles:read` |
+|--------|------|-------------|
 | CRUD | `/profiles`, `/profiles/:id` | `profiles:read` / `profiles:manage` |
 | CRUD | `/users`, `/users/:id` | `users:read` / `users:manage` |
-| GET/POST/PUT/DELETE | `/reservations`, `/reservations/:id` | `reservations:read` / `reservations:manage` |
+
+#### Reservas
+
+| Método | Rota | Função(ões) |
+|--------|------|-------------|
+| GET | `/reservations` | `reservations:read` |
+| GET | `/reservations/spaces` | `reservations:read` |
 | GET | `/reservations/available-slots` | `reservations:read` |
-| POST/DELETE | `/reservations/:id/visitors/:visitorId` | `visitors:manage` (vínculo dedicado) |
+| GET | `/reservations/:id` | `reservations:read` |
+| POST | `/reservations` | `reservations:manage` |
+| PUT | `/reservations/:id` | `reservations:manage` |
+| DELETE | `/reservations/:id` | `reservations:manage` |
+| POST | `/reservations/:id/visitors/:visitorId` | `visitors:manage` |
+| DELETE | `/reservations/:id/visitors/:visitorId` | `visitors:manage` |
+
+**Validações:** data não pode ser passada; slot deve estar disponível (`assertSlotAvailable`).
+
+#### Visitantes
+
+| Método | Rota | Função(ões) |
+|--------|------|-------------|
 | CRUD | `/visitors`, `/visitors/:id` | `visitors:read` / `visitors:manage` |
 | PATCH | `/visitors/:id/status` | `visitors:workflow` |
+
+**Validações:** data/horário da visita não podem ser no passado (`assertNotInPast`).
+
+#### Pré-autorizados
+
+| Método | Rota | Função(ões) |
+|--------|------|-------------|
+| CRUD | `/pre-authorizations`, `/pre-authorizations/:id` | `visitors:read` / `visitors:manage` |
+
+Escopo: morador vê/edita apenas registros com `createdBy === uid`.
+
+#### Mural
+
+| Método | Rota | Função(ões) |
+|--------|------|-------------|
 | CRUD | `/announcements`, `/announcements/:id` | `announcements:read` / `announcements:manage` |
+
+#### Informações
+
+| Método | Rota | Função(ões) |
+|--------|------|-------------|
+| GET | `/information` | `information:read` |
+| PUT | `/information` | `information:edit` |
+
+Documento único em `condoInformation/default`.
+
+#### Relatório
+
+| Método | Rota | Função(ões) |
+|--------|------|-------------|
 | GET | `/reports/operational` | `reports:read` |
 
-**Filtros de query comuns:** `status`, `date`, `search` (busca no servidor). Relatório: `from`, `to`, `reservationStatus`, `space`, `visitorStatus`, `visitType`, `search`.
+**Filtros de query comuns:** `status`, `date`, `search`. Relatório: `from`, `to`, `reservationStatus`, `space`, `visitorStatus`, `visitType`, `search`.
 
-Respostas de reserva incluem enriquecimento: `createdByName`, `createdByEmail`, `createdByDisplay`.
+Exemplos executáveis: `backend/requests.http`.
 
-Exemplos: `backend/requests.http`.
-
-### 4.7 Regras implementadas nos services
+### 5.7 Regras implementadas nos services
 
 | Service | Regra chave |
 |---------|-------------|
-| `ReservationsService` | Validação de slot (`assertSlotAvailable`); revalidação só se horário/espaço mudou; `linkVisitor`/`unlinkVisitor` com auth dedicada |
-| `VisitorsService` | Status default `waiting`; `authorizedBy` = uid do operador |
+| `ReservationsService` | `assertNotInPast` na data; `assertSlotAvailable`; revalidação só se horário/espaço mudou |
+| `VisitorsService` | Status default `waiting`; `createdBy` = uid; `assertNotInPast` em data/horário |
+| `PreAuthorizationsService` | Escopo por `createdBy`; CRUD com `visitors:manage` |
+| `InformationService` | GET/PUT documento `condoInformation/default` |
 | `ProfilesService` | Perfil sempre lido do Firestore; seed merge de novas funções |
-| `ReportsService` | Joins: reserva→user→perfil, reserva→visitantes, visitante→autorizador→reserva |
+| `ReportsService` | Joins reserva→user→perfil, reserva→visitantes, visitante→autorizador |
+| `AuthSessionService` | Login REST + session cookie; logout revoga tokens |
 | `UsersService` | Provisiona Auth + claim + Firestore |
 
-### 4.8 Seed
+### 5.8 Seed
 
 ```bash
+# Emuladores (recomendado)
+cd backend && npm run seed:local
+
+# Firebase real
 cd backend && npm run seed
 ```
 
-Idempotente — perfis `admin`, `doorman`, `resident`; merge de funções novas em perfis existentes; admin sempre recebe catálogo completo (`ALL_FUNCTIONS`).
+Idempotente — perfis `admin`, `doorman`, `resident`; merge de funções novas; admin sempre recebe `ALL_FUNCTIONS`.
 
 ---
 
-## 5. Frontend (React)
+## 6. Frontend (React)
 
-### 5.1 Entrada e roteamento
+### 6.1 Entrada e roteamento
 
 - `index.html` → `main.tsx` → `App.tsx` → `AppRouter`
 - Rotas em `router/index.tsx`; paths centralizados em `router/paths.ts`
 - `RequirePermission` redireciona ao dashboard se flag ausente
 - Layouts: `RootLayout` (login), `AppLayout` (sidebar + outlet), `SegurancaLayout` (submenu)
 
-### 5.2 Estrutura por feature
+### 6.2 Estrutura por feature
 
 | Rota | Page | Module |
 |------|------|--------|
@@ -245,33 +386,36 @@ Idempotente — perfis `admin`, `doorman`, `resident`; merge de funções novas 
 | `/visitantes` | `pages/visitantes/page.tsx` | `modules/visitantes/Visitantes` |
 | `/mural` | `pages/mural/page.tsx` | `modules/mural/MuralAvisos` |
 | `/relatorio` | `pages/relatorio/page.tsx` | `modules/relatorio/RelatorioOperacional` |
-| `/informacoes` | `pages/informacoes/page.tsx` | `modules/informacoes/Informacoes` |
+| `/informacoes` | `pages/informacoes/page.tsx` | `modules/informacoes/Informacoes` + `InformacoesEditDialog` |
 | `/seguranca/usuarios` | `pages/seguranca/usuarios/page.tsx` | `modules/seguranca/usuarios/UserManagement` |
 | `/seguranca/perfis` | `pages/seguranca/perfis/page.tsx` | `modules/seguranca/perfis/ProfileManagement` |
 
-### 5.3 Camadas
+### 6.3 Camadas
 
 | Camada | Pasta | Responsabilidade |
 |--------|-------|------------------|
-| Domínio | `domain/` | Tipos: user, profile, reservation, visitor, announcement, report, appFunction |
-| Infra | `infra/` | `firebaseClient`, `apiClient`, `queryParams` |
+| Domínio | `domain/` | Tipos: user, profile, reservation, visitor, announcement, report, information, preAuthorization |
+| Infra | `infra/http/` | `apiClient` (withCredentials), `queryParams` |
 | Dados | `data/` | Repositories HTTP |
-| Contextos | `contexts/` | Auth + dados condomínio (cache local para vínculos) |
+| Contextos | `contexts/` | Auth + dados condomínio (cache para vínculos) |
 | Políticas | `utils/permissions.ts` | Flags UI derivadas de `AppFunction[]` |
+| Utilitários | `utils/dates.ts` | `todayISO`, `isVisitSlotInPast` |
 
-### 5.4 Repositories
+### 6.4 Repositories
 
 | Repository | Endpoints principais |
 |------------|---------------------|
-| `authRepository` | `/auth/me`, `/functions` |
-| `reservationRepository` | `/reservations`, `/available-slots`, link/unlink visitante |
+| `authRepository` | `/auth/login`, `/auth/logout`, `/auth/me` |
+| `reservationRepository` | `/reservations`, `/spaces`, `/available-slots`, link/unlink |
 | `visitorRepository` | `/visitors`, `/visitors/:id/status` |
+| `preAuthorizationRepository` | `/pre-authorizations` |
 | `announcementRepository` | `/announcements` |
+| `informationRepository` | `/information` |
 | `userRepository` | `/users` |
 | `profileRepository` | `/profiles` |
 | `reportRepository` | `/reports/operational` |
 
-### 5.5 Navegação e RBAC na UI
+### 6.5 Navegação e RBAC na UI
 
 `Sidebar.tsx` filtra itens por `getUserPermissions(functions)`.
 
@@ -286,9 +430,17 @@ Idempotente — perfis `admin`, `doorman`, `resident`; merge de funções novas 
 | `/seguranca/usuarios` | `canManageUsers` |
 | `/seguranca/perfis` | `canAccessProfiles` |
 
+### 6.6 Validações na UI
+
+| Tela | Validação |
+|------|-----------|
+| Visitantes | `min={todayISO()}` no campo data; slots passados desabilitados via `isVisitSlotInPast` |
+| Reservas | Espaços e slots carregados da API (`GET /reservations/spaces`) |
+| Informações | Botão editar visível apenas com `information:edit` |
+
 ---
 
-## 6. Relatório operacional
+## 7. Relatório operacional
 
 **Endpoint:** `GET /reports/operational`
 
@@ -297,7 +449,7 @@ Idempotente — perfis `admin`, `doorman`, `resident`; merge de funções novas 
 ```
 Reserva.createdBy        → User (nome, email, apto, bloco) → Profile.name
 Reserva.linkedVisitorIds → Visitor[]
-Visitor.authorizedBy     → User → Profile
+Visitor.createdBy        → User → Profile
 Visitor.id               → Reservation (lookup reverso em linkedVisitorIds)
 ```
 
@@ -307,14 +459,20 @@ Respeita security scopes: morador vê apenas dados permitidos; porteiro/admin ve
 
 ---
 
-## 7. Execução local
+## 8. Execução local
 
-| Passo | Comando |
-|-------|---------|
-| Backend | `cd backend && npm install && cp .env.example .env && npm run seed && npm run start:dev` |
-| Frontend | `cd frontend && npm install && cp .env.example .env && npm run dev` |
+### Recomendado — emuladores
+
+| Terminal | Comando |
+|----------|---------|
+| 1 | `cd backend && npm run emulators` |
+| 2 | `cd backend && npm run start:dev:local` |
+| 3 | `cd backend && npm run seed:local` (primeira vez) |
+| 4 | `cd frontend && npm run dev` |
 
 Guia completo: [SETUP_TESTE.md](./SETUP_TESTE.md).
+
+### Build
 
 ```bash
 cd backend && npm run build
@@ -323,21 +481,33 @@ cd frontend && npm run build
 
 ---
 
-## 8. Limitações conhecidas (MVP)
+## 9. Testes automatizados
 
-| Item | Estado |
-|------|--------|
-| Módulo Informações | Sem API; conteúdo estático no frontend |
-| Likes/comentários avisos | Campos numéricos sem API de interação |
-| Multi-condomínio | Não suportado |
-| Dashboard — stats/cards | Parte dos números ainda mockados; avisos recentes vêm da API |
-| Export PDF | Não implementado (CSV disponível no relatório) |
+| Suite | Comando | Quantidade |
+|-------|---------|------------|
+| Backend unitários | `npm test` | 14 testes |
+| Backend e2e | `npm run test:e2e` | 46 testes (todos endpoints) |
+| Frontend Vitest | `npm test` | 6 testes |
+
+Detalhes: [TESTES.md](./TESTES.md).
 
 ---
 
-## 9. Referências
+## 10. Limitações conhecidas (MVP)
 
-- [NestJS](https://docs.nestjs.com) · [React](https://react.dev) · [Vite](https://vite.dev) · [Firebase](https://firebase.google.com/docs)
+| Item | Estado |
+|------|--------|
+| Likes/comentários avisos | Campos numéricos sem API de interação |
+| Multi-condomínio | Não suportado (documento `condoInformation/default` único) |
+| Export PDF | Não implementado (CSV disponível no relatório) |
+| Firestore produção | Projeto `vyzin-app` pode atingir cota — use emuladores localmente |
+
+---
+
+## 11. Referências
+
+- [NestJS](https://docs.nestjs.com) · [React](https://react.dev) · [Vite](https://vite.dev) · [Firebase Emulators](https://firebase.google.com/docs/emulator-suite)
+- [MAPA_DO_CODIGO.md](./MAPA_DO_CODIGO.md) — referência arquivo a arquivo
 
 ---
 

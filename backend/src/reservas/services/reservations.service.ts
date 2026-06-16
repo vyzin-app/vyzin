@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,6 +11,7 @@ import type { QueryFilter } from '../../persistence/interfaces/find-options.inte
 import { RepositoryFactory } from '../../persistence/firestore/repository.factory';
 import { applyTextSearch } from '../../persistence/utils/text-search.util';
 import {
+  RESERVATION_BLOCK_HOURS,
   buildScheduleSlots,
   endOfDay,
   ScheduleSlotAvailability,
@@ -56,10 +58,25 @@ export class ReservationsService {
     return this.enrichOneWithCreator(reservation);
   }
 
+  /** Returns bookable spaces and block duration (hours) for the UI. */
+  getSpaces(): { name: string; blockHours: number }[] {
+    return Object.entries(RESERVATION_BLOCK_HOURS).map(([name, blockHours]) => ({
+      name,
+      blockHours,
+    }));
+  }
+
   /** Returns all schedule blocks for the day, marking which are still free. */
   async getAvailableSlots(
     filter: FilterAvailableSlotsDTO,
   ): Promise<ScheduleSlotAvailability[]> {
+    const dayEnd = endOfDay(filter.date);
+    if (dayEnd.getTime() < Date.now()) {
+      throw new BadRequestException(
+        'Nao e possivel consultar horarios para uma data que ja passou.',
+      );
+    }
+
     const active = await this.getActiveReservationsForSpaceOnDate(
       filter.space,
       filter.date,
@@ -68,15 +85,24 @@ export class ReservationsService {
 
     return buildScheduleSlots(filter.space).map((slot) => ({
       ...slot,
-      available: !active.some((reservation) =>
-        slotsOverlap(
-          slot.startTime,
-          slot.endTime,
-          reservation.startTime,
-          reservation.endTime,
+      available:
+        !this.isSlotStartInPast(filter.date, slot.startTime) &&
+        !active.some((reservation) =>
+          slotsOverlap(
+            slot.startTime,
+            slot.endTime,
+            reservation.startTime,
+            reservation.endTime,
+          ),
         ),
-      ),
     }));
+  }
+
+  private isSlotStartInPast(date: Date, startTime: string): boolean {
+    const slotStart = new Date(date);
+    const [hours, minutes] = startTime.split(':').map(Number);
+    slotStart.setHours(hours, minutes ?? 0, 0, 0);
+    return slotStart.getTime() < Date.now();
   }
 
   private buildReservationFilters(
@@ -161,6 +187,19 @@ export class ReservationsService {
     );
   }
 
+  /** Rejects reservations whose start moment is already in the past. */
+  private assertNotInPast(date: Date, startTime: string): void {
+    const slotStart = new Date(date);
+    const [hours, minutes] = startTime.split(':').map(Number);
+    slotStart.setHours(hours, minutes ?? 0, 0, 0);
+
+    if (slotStart.getTime() < Date.now()) {
+      throw new BadRequestException(
+        'Nao e possivel reservar para uma data ou horario que ja passou.',
+      );
+    }
+  }
+
   private async assertSlotAvailable(
     space: string,
     date: Date,
@@ -188,6 +227,7 @@ export class ReservationsService {
     currentUser: AuthenticatedUser,
   ): Promise<string> {
     if (dto.status === ReservationStatusEnum.CONFIRMED) {
+      this.assertNotInPast(dto.date, dto.startTime);
       await this.assertSlotAvailable(
         dto.space,
         dto.date,
@@ -226,6 +266,7 @@ export class ReservationsService {
       dto.status === ReservationStatusEnum.CONFIRMED &&
       this.scheduleChanged(existing, dto)
     ) {
+      this.assertNotInPast(dto.date, dto.startTime);
       await this.assertSlotAvailable(
         dto.space,
         dto.date,
@@ -241,6 +282,10 @@ export class ReservationsService {
       id: existing.id,
       notes: dto.notes ?? existing.notes,
       createdBy: existing.createdBy,
+      linkedVisitorIds:
+        dto.status === ReservationStatusEnum.CANCELLED
+          ? (existing.linkedVisitorIds ?? [])
+          : (dto.linkedVisitorIds ?? existing.linkedVisitorIds ?? []),
     };
 
     const saved = await repo.save(id, updatedReservation);

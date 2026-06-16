@@ -27,11 +27,16 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/app/contexts/AuthContext'
 import { announcementRepository } from '@/app/data/announcementRepository'
+import { reservationRepository } from '@/app/data/reservationRepository'
+import { userRepository } from '@/app/data/userRepository'
+import { visitorRepository } from '@/app/data/visitorRepository'
 import {
   Announcement,
   AnnouncementCategory,
 } from '@/app/domain/announcement'
+import { Reservation } from '@/app/domain/reservation'
 import { paths } from '@/app/router/paths'
+import { formatDateBR, todayISO } from '@/app/utils/dates'
 import { getUserPermissions } from '@/app/utils/permissions'
 import { display } from '@/app/utils/displayLabels'
 
@@ -62,6 +67,16 @@ export function VyzinDashboard() {
   const [recentAnnouncements, setRecentAnnouncements] = useState<
     Announcement[]
   >([])
+  const [upcomingReservations, setUpcomingReservations] = useState<
+    Reservation[]
+  >([])
+  const [dashboardStats, setDashboardStats] = useState({
+    reservations: 0,
+    visitorsToday: 0,
+    importantAnnouncements: 0,
+    users: 0,
+    waitingVisitors: 0,
+  })
   const [selectedAnnouncement, setSelectedAnnouncement] =
     useState<Announcement | null>(null)
   const [announcementDetailOpen, setAnnouncementDetailOpen] = useState(false)
@@ -83,6 +98,72 @@ export function VyzinDashboard() {
     void loadRecentAnnouncements()
   }, [loadRecentAnnouncements])
 
+  const loadDashboardData = useCallback(async () => {
+    const today = todayISO()
+    const tasks: Promise<void>[] = []
+
+    if (permissions?.canAccessReservations) {
+      tasks.push(
+        reservationRepository.list({ status: 'confirmed' }).then((items) => {
+          const upcoming = items
+            .filter((item) => item.date >= today)
+            .sort((a, b) =>
+              `${a.date}${a.startTime}`.localeCompare(
+                `${b.date}${b.startTime}`,
+              ),
+            )
+          setUpcomingReservations(upcoming.slice(0, 3))
+          setDashboardStats((prev) => ({
+            ...prev,
+            reservations: items.length,
+          }))
+        }),
+      )
+    } else {
+      setUpcomingReservations([])
+    }
+
+    if (permissions?.canAccessVisitors) {
+      tasks.push(
+        Promise.all([
+          visitorRepository.list({ date: today }),
+          visitorRepository.list({ date: today, status: 'waiting' }),
+        ]).then(([todayVisitors, waiting]) => {
+          setDashboardStats((prev) => ({
+            ...prev,
+            visitorsToday: todayVisitors.length,
+            waitingVisitors: waiting.length,
+          }))
+        }),
+      )
+    }
+
+    if (permissions?.canAccessNoticeBoard) {
+      tasks.push(
+        announcementRepository.list({ isImportant: true }).then((items) => {
+          setDashboardStats((prev) => ({
+            ...prev,
+            importantAnnouncements: items.length,
+          }))
+        }),
+      )
+    }
+
+    if (permissions?.canManageUsers && user?.role === 'admin') {
+      tasks.push(
+        userRepository.list().then((items) => {
+          setDashboardStats((prev) => ({ ...prev, users: items.length }))
+        }),
+      )
+    }
+
+    await Promise.all(tasks)
+  }, [permissions, user?.role])
+
+  useEffect(() => {
+    void loadDashboardData()
+  }, [loadDashboardData])
+
   const openAnnouncementDetail = (announcement: Announcement) => {
     setSelectedAnnouncement(announcement)
     setAnnouncementDetailOpen(true)
@@ -95,52 +176,28 @@ export function VyzinDashboard() {
   const openNewVisitor = () => {
     navigate(paths.visitantes, { state: { openNewModal: true } })
   }
-  const upcomingReservations = [
-    {
-      id: 1,
-      space: 'Salão de Festas',
-      date: '15 Abr 2026',
-      time: '19:00 - 23:00',
-      status: 'confirmed',
-    },
-    {
-      id: 2,
-      space: 'Churrasqueira 2',
-      date: '18 Abr 2026',
-      time: '12:00 - 18:00',
-      status: 'confirmed',
-    },
-    {
-      id: 3,
-      space: 'Quadra Esportiva',
-      date: '20 Abr 2026',
-      time: '15:00 - 17:00',
-      status: 'confirmed',
-    },
-  ]
-
   const getQuickStats = () => {
     const baseStats = [
       {
-        label: 'Avisos Não Lidos',
-        value: '2',
+        label: 'Avisos Importantes',
+        value: String(dashboardStats.importantAnnouncements),
         icon: MessageSquare,
         color: 'bg-orange-500',
-        show: true,
+        show: permissions?.canAccessNoticeBoard,
       },
       {
         label:
           user?.role === 'admin'
             ? display.reservation.totalMany
             : display.reservation.myMany,
-        value: user?.role === 'admin' ? '12' : '3',
+        value: String(dashboardStats.reservations),
         icon: Calendar,
         color: 'bg-blue-500',
         show: permissions?.canAccessReservations,
       },
       {
         label: 'Visitantes Hoje',
-        value: '5',
+        value: String(dashboardStats.visitorsToday),
         icon: Users,
         color: 'bg-[#10B981]',
         show: permissions?.canAccessVisitors,
@@ -150,7 +207,7 @@ export function VyzinDashboard() {
     if (user?.role === 'admin') {
       baseStats.push({
         label: 'Total de Usuários',
-        value: '24',
+        value: String(dashboardStats.users),
         icon: UserCog,
         color: 'bg-purple-500',
         show: permissions?.canManageUsers,
@@ -294,7 +351,10 @@ export function VyzinDashboard() {
                       {announcement.content}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Por {announcement.author}
+                      Por{' '}
+                      {announcement.authorDisplay ??
+                        announcement.authorName ??
+                        announcement.author}
                     </p>
                   </div>
                 ))}
@@ -332,8 +392,11 @@ export function VyzinDashboard() {
                     {selectedAnnouncement.title}
                   </DialogTitle>
                   <p className="text-sm text-muted-foreground pt-1">
-                    Por {selectedAnnouncement.author} •{' '}
-                    {formatAnnouncementDate(selectedAnnouncement.date)}
+                    Por{' '}
+                    {selectedAnnouncement.authorDisplay ??
+                      selectedAnnouncement.authorName ??
+                      selectedAnnouncement.author}{' '}
+                    • {formatAnnouncementDate(selectedAnnouncement.date)}
                   </p>
                 </DialogHeader>
 
@@ -462,6 +525,11 @@ export function VyzinDashboard() {
               </Button>
             </div>
             <div className="space-y-3">
+              {upcomingReservations.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  Nenhuma reserva confirmada nos próximos dias.
+                </p>
+              )}
               {upcomingReservations.map((reservation) => (
                 <div
                   key={reservation.id}
@@ -476,33 +544,18 @@ export function VyzinDashboard() {
                       <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3.5 h-3.5" />
-                          {reservation.date}
+                          {formatDateBR(reservation.date)}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
-                          {reservation.time}
+                          {reservation.startTime} – {reservation.endTime}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <Badge
-                    className={
-                      reservation.status === 'confirmed'
-                        ? 'bg-success/10 text-success border-success/20'
-                        : 'bg-orange-500/10 text-orange-500 border-orange-500/20'
-                    }
-                  >
-                    {reservation.status === 'confirmed' ? (
-                      <>
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Confirmado
-                      </>
-                    ) : (
-                      <>
-                        <Clock className="w-3 h-3 mr-1" />
-                        Pendente
-                      </>
-                    )}
+                  <Badge className="bg-success/10 text-success border-success/20">
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Confirmado
                   </Badge>
                 </div>
               ))}
@@ -515,58 +568,54 @@ export function VyzinDashboard() {
               <h3 className="text-lg font-semibold">Resumo de Atividades</h3>
             </div>
             <div className="space-y-3">
-              {user?.role === 'admin' && (
-                <>
-                  <div className="p-3 rounded-lg bg-secondary/50">
-                    <p className="text-sm font-medium">
-                      Novo morador cadastrado
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      5h atrás
-                    </p>
-                  </div>
-                </>
-              )}
-              {user?.role === 'doorman' && (
-                <>
+              {permissions?.canAccessVisitors &&
+                dashboardStats.waitingVisitors > 0 && (
                   <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
                     <p className="text-sm font-medium">
-                      Visitante aguardando autorização
+                      {dashboardStats.waitingVisitors} visitante(s) aguardando
+                      autorização
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      30 min atrás
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Hoje</p>
                   </div>
+                )}
+              {permissions?.canAccessNoticeBoard &&
+                dashboardStats.importantAnnouncements > 0 && (
                   <div className="p-3 rounded-lg bg-secondary/50">
                     <p className="text-sm font-medium">
-                      Entrega realizada - Apto 201
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      1h atrás
+                      {dashboardStats.importantAnnouncements} aviso(s)
+                      importante(s) no mural
                     </p>
                   </div>
-                </>
-              )}
-              {user?.role === 'resident' && (
-                <>
-                  <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                    <p className="text-sm font-medium">
-                      Boleto do condomínio disponível
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      2h atrás
-                    </p>
-                  </div>
+                )}
+              {permissions?.canAccessReservations &&
+                upcomingReservations.length > 0 && (
                   <div className="p-3 rounded-lg bg-secondary/50">
                     <p className="text-sm font-medium">
-                      {display.reservation.confirmedMessage}
+                      Próxima reserva: {upcomingReservations[0].space}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      1 dia atrás
+                      {formatDateBR(upcomingReservations[0].date)} •{' '}
+                      {upcomingReservations[0].startTime}
                     </p>
                   </div>
-                </>
-              )}
+                )}
+              {(permissions?.canAccessVisitors ||
+                permissions?.canAccessNoticeBoard ||
+                permissions?.canAccessReservations) &&
+                dashboardStats.waitingVisitors === 0 &&
+                dashboardStats.importantAnnouncements === 0 &&
+                upcomingReservations.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhuma atividade pendente para hoje.
+                  </p>
+                )}
+              {!permissions?.canAccessVisitors &&
+                !permissions?.canAccessNoticeBoard &&
+                !permissions?.canAccessReservations && (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhuma atividade recente disponível.
+                  </p>
+                )}
             </div>
           </Card>
         </div>

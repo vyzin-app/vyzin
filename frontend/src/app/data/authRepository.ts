@@ -17,11 +17,21 @@ export interface AuthMeResponse {
 }
 
 export interface AuthRepository {
+  login(email: string, password: string): Promise<AuthMeResponse>
+  logout(): Promise<void>
   me(): Promise<AuthMeResponse>
   listFunctions(): Promise<FunctionDescriptor[]>
 }
 
 class HttpAuthRepository implements AuthRepository {
+  login(email: string, password: string): Promise<AuthMeResponse> {
+    return apiClient.post<AuthMeResponse>('/auth/login', { email, password })
+  }
+
+  logout(): Promise<void> {
+    return apiClient.post<void>('/auth/logout')
+  }
+
   me(): Promise<AuthMeResponse> {
     return apiClient.get<AuthMeResponse>('/auth/me')
   }

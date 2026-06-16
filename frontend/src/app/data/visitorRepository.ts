@@ -3,10 +3,20 @@ import { buildQueryString } from '../infra/http/queryParams'
 import { apiClient } from '../infra/http/api'
 import { VisitorListFilter } from '../domain/listFilters'
 
-export type VisitorInput = Omit<Visitor, 'id' | 'authorizedBy'>
+export type VisitorInput = Omit<
+  Visitor,
+  | 'id'
+  | 'authorizedBy'
+  | 'createdBy'
+  | 'createdByName'
+  | 'createdByDisplay'
+  | 'authorizedByName'
+  | 'authorizedByDisplay'
+>
 
 export interface VisitorRepository {
   list(filter?: VisitorListFilter): Promise<Visitor[]>
+  get(id: string): Promise<Visitor>
   create(input: VisitorInput): Promise<string>
   update(id: string, input: VisitorInput): Promise<Visitor>
   updateStatus(
@@ -40,6 +50,11 @@ class HttpVisitorRepository implements VisitorRepository {
     })
     const data = await apiClient.get<Visitor[]>(`/visitors${query}`)
     return data.map(normalize)
+  }
+
+  async get(id: string): Promise<Visitor> {
+    const visitor = await apiClient.get<Visitor>(`/visitors/${id}`)
+    return normalize(visitor)
   }
 
   create(input: VisitorInput): Promise<string> {

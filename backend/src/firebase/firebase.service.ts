@@ -2,6 +2,10 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import * as fs from 'fs';
 import * as path from 'path';
+import {
+  isFirebaseEmulatorEnabled,
+  resolveFirebaseProjectId,
+} from './firebase-emulator';
 
 @Injectable()
 export class FirebaseService implements OnModuleInit {
@@ -11,10 +15,19 @@ export class FirebaseService implements OnModuleInit {
     if (admin.apps.length) {
       return;
     }
+
+    if (isFirebaseEmulatorEnabled()) {
+      admin.initializeApp({ projectId: resolveFirebaseProjectId() });
+      this.logger.warn(
+        `Firebase emulators ativos — Firestore=${process.env.FIRESTORE_EMULATOR_HOST ?? 'off'}, Auth=${process.env.FIREBASE_AUTH_EMULATOR_HOST ?? 'off'}`,
+      );
+      return;
+    }
+
     admin.initializeApp({
       credential: this.resolveCredential(),
     });
-    this.logger.log('Firebase Admin initialized');
+    this.logger.log('Firebase Admin initialized (producao)');
   }
 
   getFirestore(): admin.firestore.Firestore {
@@ -44,7 +57,7 @@ export class FirebaseService implements OnModuleInit {
     }
 
     throw new Error(
-      'Firebase: set GOOGLE_APPLICATION_CREDENTIALS, FIREBASE_SERVICE_ACCOUNT_JSON, or add firebase-key.json under the backend folder.',
+      'Firebase: set GOOGLE_APPLICATION_CREDENTIALS, FIREBASE_SERVICE_ACCOUNT_JSON, or add firebase-key.json under the backend folder. Para desenvolvimento local use os emuladores (npm run emulators).',
     );
   }
 }
