@@ -56,7 +56,8 @@ cp .env.example .env   # já aponta para emuladores
 npm run start:dev:local
 ```
 
-API: http://localhost:3000
+API: http://localhost:3000  
+**Swagger UI:** http://localhost:3000/api/docs · **OpenAPI JSON:** http://localhost:3000/api/docs-json
 
 ### Terminal 3 — Seed (primeira vez)
 
@@ -92,6 +93,16 @@ cd frontend && npm test && npm run typecheck
 ```
 
 Detalhes: [docs/TESTES.md](docs/TESTES.md).
+
+## Documentação interativa da API (Swagger)
+
+Com o backend rodando, acesse http://localhost:3000/api/docs.
+
+1. Tag **Auth** → `POST /auth/login` → **Try it out** → use `admin@vyzin.com` / `admin123`
+2. Clique **Execute** — o cookie de sessão é salvo automaticamente
+3. Teste os demais endpoints sem precisar configurar o **Authorize**
+
+Guia completo: [docs/DOCUMENTACAO_TECNICA.md](docs/DOCUMENTACAO_TECNICA.md#59-swagger-openapi).
 
 ## Produção / Firebase real
 

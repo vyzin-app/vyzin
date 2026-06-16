@@ -9,13 +9,22 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
+import {
+  ApiNoContentResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { RequireFunction } from '../../auth/decorators/require-function.decorator';
 import { AppFunction } from '../../auth/functions/app-functions';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user';
 import { PreAuthorizationDTO } from '../dto/pre-authorization.dto';
 import { PreAuthorizationsService } from '../services/pre-authorizations.service';
+import { ApiSecured } from '../../swagger/api-secured.decorator';
 
+@ApiTags('PreAuthorizations')
+@ApiSecured()
 @Controller('pre-authorizations')
 export class PreAuthorizationsController {
   constructor(
@@ -24,6 +33,8 @@ export class PreAuthorizationsController {
 
   @Get()
   @RequireFunction(AppFunction.VISITORS_READ)
+  @ApiOperation({ summary: 'Lista pré-autorizados (escopo por createdBy)' })
+  @ApiQuery({ name: 'search', required: false })
   async list(
     @Query('search') search: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
@@ -33,6 +44,7 @@ export class PreAuthorizationsController {
 
   @Get(':id')
   @RequireFunction(AppFunction.VISITORS_READ)
+  @ApiOperation({ summary: 'Busca pré-autorizado por ID' })
   async getById(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -42,6 +54,7 @@ export class PreAuthorizationsController {
 
   @Post()
   @RequireFunction(AppFunction.VISITORS_MANAGE)
+  @ApiOperation({ summary: 'Cadastra pré-autorizado' })
   async create(
     @Body() dto: PreAuthorizationDTO,
     @CurrentUser() user: AuthenticatedUser,
@@ -51,6 +64,7 @@ export class PreAuthorizationsController {
 
   @Put(':id')
   @RequireFunction(AppFunction.VISITORS_MANAGE)
+  @ApiOperation({ summary: 'Atualiza pré-autorizado' })
   async update(
     @Param('id') id: string,
     @Body() dto: PreAuthorizationDTO,
@@ -62,6 +76,8 @@ export class PreAuthorizationsController {
   @Delete(':id')
   @HttpCode(204)
   @RequireFunction(AppFunction.VISITORS_MANAGE)
+  @ApiOperation({ summary: 'Remove pré-autorizado' })
+  @ApiNoContentResponse()
   async remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

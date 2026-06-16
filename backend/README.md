@@ -37,6 +37,9 @@ npm run seed:local
 
 API: http://localhost:3000
 
+**Swagger UI:** http://localhost:3000/api/docs  
+**OpenAPI JSON:** http://localhost:3000/api/docs-json
+
 ---
 
 ## Variáveis de ambiente

@@ -209,7 +209,22 @@ O seed é **idempotente** e **mescla** novas funções em perfis existentes. O p
 
 ---
 
-## 6. Testar API com REST Client
+## 6. Testar API
+
+### Swagger UI (recomendado)
+
+URL: http://localhost:3000/api/docs (backend rodando)
+
+1. Tag **Auth** → `POST /auth/login` → **Try it out**
+2. Body: `{ "email": "admin@vyzin.com", "password": "admin123" }`
+3. **Execute** — cookie `vyzin_session` salvo no navegador
+4. Teste `GET /auth/me`, `GET /reservations`, etc.
+
+Não é necessário clicar em **Authorize** após o login. Detalhes: [DOCUMENTACAO_TECNICA.md § Swagger](./DOCUMENTACAO_TECNICA.md#59-swagger-openapi).
+
+OpenAPI JSON: http://localhost:3000/api/docs-json
+
+### REST Client (`requests.http`)
 
 Arquivo: `backend/requests.http`
 

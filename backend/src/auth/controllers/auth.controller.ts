@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { ApiNoContentResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { ProfilesService } from 'src/profiles/services/profiles.service';
 import { UsersService } from 'src/users/services/users.service';
@@ -10,7 +11,9 @@ import {
 import { LoginDto } from '../dto/login.dto';
 import { AuthSessionService } from '../services/auth-session.service';
 import type { AuthenticatedUser } from '../types/authenticated-user';
+import { ApiSecured } from '../../swagger/api-secured.decorator';
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -23,6 +26,8 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(200)
+  @ApiOperation({ summary: 'Login com e-mail e senha (define cookie vyzin_session)' })
+  @ApiOkResponse({ description: 'Usuário, perfil e funções RBAC' })
   async login(
     @Body() body: LoginDto,
     @Res({ passthrough: true }) res: Response,
@@ -38,6 +43,8 @@ export class AuthController {
   @Public()
   @Post('logout')
   @HttpCode(200)
+  @ApiOperation({ summary: 'Encerra sessão e limpa cookie' })
+  @ApiOkResponse({ description: 'Sessão encerrada' })
   async logout(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -49,6 +56,9 @@ export class AuthController {
 
   /** Returns the logged-in user's profile data + the functions they can perform. */
   @Get('me')
+  @ApiSecured()
+  @ApiOperation({ summary: 'Dados do usuário logado e perfil' })
+  @ApiOkResponse({ description: 'Usuário, perfil e funções RBAC' })
   async me(@CurrentUser() current: AuthenticatedUser | undefined) {
     if (!current) {
       throw new UnauthorizedException();

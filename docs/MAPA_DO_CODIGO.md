@@ -36,10 +36,18 @@ Referência **arquivo a arquivo** do repositório. Use junto com [DOCUMENTACAO_T
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/main.ts` | Bootstrap: cookie-parser, CORS credentials, ValidationPipe, porta |
+| `src/main.ts` | Bootstrap: cookie-parser, CORS credentials, ValidationPipe, Swagger, porta |
 | `src/app.module.ts` | Importa todos os módulos de domínio |
 | `src/app.controller.ts` | `GET /` healthcheck público |
 | `src/app.service.ts` | Mensagem de boas-vindas da API |
+
+### Swagger — `src/swagger/`
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `swagger.config.ts` | DocumentBuilder, tags, auth schemes, setup em `/api/docs` |
+| `api-secured.decorator.ts` | `@ApiSecured()` — documenta cookie + Bearer |
+| `swagger.constants.ts` | Constantes dos schemes de autenticação |
 
 ### Auth — `src/auth/`
 

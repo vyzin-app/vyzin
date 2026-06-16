@@ -366,6 +366,36 @@ cd backend && npm run seed
 
 Idempotente — perfis `admin`, `doorman`, `resident`; merge de funções novas; admin sempre recebe `ALL_FUNCTIONS`.
 
+### 5.9 Swagger (OpenAPI)
+
+Documentação interativa gerada com `@nestjs/swagger`.
+
+| Recurso | URL |
+|---------|-----|
+| Swagger UI | http://localhost:3000/api/docs |
+| OpenAPI JSON | http://localhost:3000/api/docs-json |
+
+**Arquivos:**
+
+| Arquivo | Responsabilidade |
+|---------|------------------|
+| `src/swagger/swagger.config.ts` | Título, descrição, tags, esquemas de auth, setup da UI |
+| `src/swagger/api-secured.decorator.ts` | `@ApiSecured()` — cookie + Bearer nos controllers |
+| `src/swagger/swagger.constants.ts` | Nome do scheme Bearer |
+| `nest-cli.json` | Plugin Swagger (gera schemas dos DTOs via class-validator) |
+
+**Como testar no Swagger UI:**
+
+1. Backend rodando (`npm run start:dev` ou `start:dev:local`)
+2. Abrir http://localhost:3000/api/docs
+3. **Auth** → `POST /auth/login` → **Try it out** → **Execute** com credenciais do seed
+4. Cookie `vyzin_session` gravado no navegador (`withCredentials: true`)
+5. Demais rotas autenticadas funcionam sem clicar em **Authorize**
+
+**Authorize (cadeado):** opcional. Use `bearer` apenas se tiver um Firebase ID token; o fluxo normal é login via cookie.
+
+Alternativa manual: `backend/requests.http` (REST Client).
+
 ---
 
 ## 6. Frontend (React)

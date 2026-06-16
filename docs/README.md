@@ -14,7 +14,7 @@
 | Saber o que é permitido ou proibido | [REGRAS_DE_NEGOCIO.md](./REGRAS_DE_NEGOCIO.md) |
 | Desenvolver ou dar manutenção | [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md) + [MAPA_DO_CODIGO.md](./MAPA_DO_CODIGO.md) |
 | Subir o ambiente e testar manualmente | [SETUP_TESTE.md](./SETUP_TESTE.md) |
-| Rodar ou escrever testes | [TESTES.md](./TESTES.md) |
+| Testar endpoints da API no browser | [DOCUMENTACAO_TECNICA.md § Swagger](./DOCUMENTACAO_TECNICA.md#59-swagger-openapi) → http://localhost:3000/api/docs |
 | Ver fluxos de usuário | [CASOS_DE_USO.md](./CASOS_DE_USO.md) |
 | Preparar apresentação N2 | [APRESENTACAO_N2.md](./APRESENTACAO_N2.md) |
 
@@ -26,7 +26,7 @@
 |-----------|---------|-----------|
 | [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md) | Product, professores | Problema, valor, personas, MVP, roadmap |
 | [REGRAS_DE_NEGOCIO.md](./REGRAS_DE_NEGOCIO.md) | QA, analistas, devs | Regras RN-* numeradas, matriz de perfis |
-| [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md) | Desenvolvedores | Arquitetura, auth, API, persistência, frontend |
+| [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md) | Desenvolvedores | Arquitetura, auth, API, Swagger, persistência, frontend |
 | [MAPA_DO_CODIGO.md](./MAPA_DO_CODIGO.md) | Desenvolvedores | Referência arquivo a arquivo |
 | [CASOS_DE_USO.md](./CASOS_DE_USO.md) | Todos | Casos de uso + diagramas Mermaid |
 | [SETUP_TESTE.md](./SETUP_TESTE.md) | Devs / QA | Emuladores, env, seed, roteiro manual |
