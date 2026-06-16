@@ -21,6 +21,10 @@ export class FirebaseService implements OnModuleInit {
     return admin.firestore();
   }
 
+  getAuth(): admin.auth.Auth {
+    return admin.auth();
+  }
+
   private resolveCredential(): admin.credential.Credential {
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
       return admin.credential.applicationDefault();

@@ -1,256 +1,344 @@
-# Documentação técnica do sistema Vyzin
+# Documentação técnica — Vyzin
 
-**Projeto:** Vyzin — sistema de gestão de condomínios (MVP)  
-**Organização do repositório:** monorepo (`frontend/` e `backend/`)  
-**Versão do documento:** alinhada ao estado atual do código-fonte no repositório.
+**Projeto:** Vyzin — gestão condominial (MVP)  
+**Organização:** monorepo (`frontend/` + `backend/`)  
+**Versão:** integração frontend ↔ backend ↔ Firebase + relatórios + persistence layer  
+**Última atualização:** junho/2026
 
----
-
-## 1. Resumo
-
-O Vyzin é uma aplicação web cujo objetivo é apoiar a gestão de condomínios, com escopo inicial (MVP) centrado em autenticação de usuários, reservas de áreas comuns e mural de avisos ou chamados. A solução adota arquitetura em camadas: interface em **React** (Create React App), API monolítica em **NestJS** (Node.js) e persistência na nuvem com **Google Firebase** (Firestore e Authentication). O backend utiliza o **Firebase Admin SDK** para acesso privilegiado ao Firestore, enquanto o frontend utiliza o **Firebase JS SDK** para autenticação diretamente contra o Firebase Authentication, padrão comum quando se deseja sessão gerida pelo próprio Firebase no cliente.
-
-Este documento descreve a arquitetura de software, o mapeamento para o paradigma **MVC** solicitado em contexto acadêmico, e a organização explícita do código no backend e no frontend.
+Documentos relacionados: [índice](./README.md) · [regras de negócio](./REGRAS_DE_NEGOCIO.md) · [casos de uso](./CASOS_DE_USO.md) · [setup](./SETUP_TESTE.md)
 
 ---
 
-## 2. Introdução e objetivos
+## 1. Resumo executivo
 
-### 2.1 Contexto
+O Vyzin é uma SPA React que consome uma API REST NestJS. A autenticação usa **Firebase Auth** no cliente; o backend valida o **ID token** e aplica **RBAC dinâmico** via perfis e funções. Persistência no **Firestore** (Admin SDK) através de uma **camada de repositório genérica** com **security scopes** por entidade.
 
-Em disciplinas de **Arquitetura de Software** e **Programação Web**, é frequente exigir-se uma aplicação com separação de responsabilidades entre apresentação, lógica de negócio e dados. O Vyzin foi estruturado para:
-
-- expor uma **API HTTP** (REST) no backend;
-- manter regras de negócio e acesso a dados concentrados no servidor;
-- apresentar interface rica no navegador, sem acoplamento direto da interface ao modelo de dados além do contrato da API (evolução futura) e do uso controlado do Firebase Auth no cliente.
-
-### 2.2 Objetivos técnicos do MVP
-
-| Objetivo | Realização no código atual |
-|----------|----------------------------|
-| Monólito | Um único processo NestJS compõe a API. |
-| MVC (mapeamento) | Controllers e Services no Nest; persistência via serviços/repositórios (Firestore); frontend como camada de apresentação. |
-| Banco na nuvem | Firestore via `firebase-admin` no backend. |
-| Autenticação | E-mail e senha no frontend com Firebase Auth; validação de token no backend é etapa natural de evolução. |
+| Camada | Stack | Porta dev |
+|--------|-------|-----------|
+| Frontend | React, TypeScript, Vite, react-router-dom, Tailwind v4, shadcn/ui, Axios | 3001 |
+| Backend | NestJS, TypeScript, class-validator | 3000 |
+| Nuvem | Firebase Auth + Firestore (`vyzin-app`) | — |
 
 ---
 
-## 3. Visão arquitetural global
+## 2. Arquitetura global
 
-### 3.1 Monorepo
-
-O repositório agrupa dois pacotes Node.js independentes:
-
-- **`frontend/`** — aplicação React (SPA) servida em desenvolvimento pelo webpack dev server (porta configurável, por exemplo 3001).
-- **`backend/`** — aplicação NestJS que escuta HTTP (porta padrão 3000, configurável por `PORT`).
-
-Essa organização facilita versionamento único, revisão em pull requests e alinhamento de contratos entre cliente e servidor.
-
-### 3.2 Diagrama de contexto (camadas)
+### 2.1 Diagrama de camadas
 
 ```mermaid
 flowchart TB
-  subgraph client [Cliente - navegador]
-    UI[React - interface]
-    FBAuth[Firebase Auth - SDK web]
+  subgraph client [Cliente]
+    UI[Pages + Modules React]
+    Router[react-router-dom]
+    CTX[AuthContext / CondoDataContext]
+    REPO[Repositories]
+    API_CLIENT[apiClient + firebaseClient]
   end
-  subgraph server [Servidor - NestJS monólito]
-    C[Controllers]
-    S[Services / regras de negócio]
-    FSrv[FirebaseService - Admin SDK]
+
+  subgraph server [Servidor NestJS]
+    GUARDS[Guards globais]
+    CTRL[Controllers]
+    SVC[Services]
+    REPO_F[RepositoryFactory + Scopes]
+    FB_SRV[FirebaseService]
   end
-  subgraph google [Google Cloud - Firebase]
-    AuthSvc[Authentication]
-    Firestore[(Firestore)]
+
+  subgraph firebase [Firebase]
+    AUTH[Authentication]
+    FS[(Firestore)]
   end
-  UI --> FBAuth
-  UI -.->|"evolução: REST + Bearer token"| C
-  C --> S
-  S --> FSrv
-  FSrv --> Firestore
-  FBAuth --> AuthSvc
+
+  UI --> Router --> CTX --> REPO --> API_CLIENT
+  API_CLIENT -->|Bearer token| GUARDS --> CTRL --> SVC --> REPO_F --> FB_SRV --> FS
+  API_CLIENT --> AUTH
+  GUARDS --> AUTH
 ```
 
-**Leitura do diagrama:** hoje, o login ocorre entre o React e o **Firebase Authentication** (seta direta). O backend já está preparado para **Firestore** via Admin SDK. A integração completa “painel autenticado chama API Nest” será implementada quando os controllers enviarem o **ID Token** do Firebase no cabeçalho `Authorization` e o Nest validar com `admin.auth().verifyIdToken()`.
+### 2.2 Monorepo
 
----
-
-## 4. Mapeamento MVC (disciplina) para NestJS e React
-
-Em um MVC “clássico” (por exemplo, servidor que renderiza views), **Model** representa dados e persistência, **View** a apresentação e **Controller** orquestra requisições.
-
-No Vyzin:
-
-| Papel MVC | Onde vive no Vyzin |
-|-----------|-------------------|
-| **View** | Componentes React (`frontend/src/`), folhas de estilo (`App.css`, `index.css`), assets em `public/`. |
-| **Controller** | Classes anotadas com `@Controller()` no NestJS; expõem rotas HTTP e delegam a serviços. Exemplo: `AppController` em `backend/src/app.controller.ts`. |
-| **Model** | Em sentido acadêmico amplo: entidades e persistência. No Nest, costuma-se materializar como **Services** que orquestram regras e, em evolução, **repositórios** ou acesso explícito ao Firestore através do `FirebaseService`. |
-
-O NestJS organiza o código em **módulos** (`@Module`), cada um podendo declarar `controllers` e `providers` (serviços injetáveis). Isso não substitui o MVC conceitual, mas **modulariza** o monólito por domínio (autenticação autorizada no servidor, reservas, mural).
-
----
-
-## 5. Backend (NestJS) — arquitetura e código
-
-### 5.1 Ponto de entrada e configuração
-
-O ficheiro `backend/src/main.ts` cria a aplicação Nest e inicia o servidor HTTP:
-
-```typescript
-const app = await NestFactory.create(AppModule);
-await app.listen(process.env.PORT ?? 3000);
+```
+vyzin/
+├── backend/
+│   ├── src/
+│   │   ├── auth/              # Guards, decorators, catálogo AppFunction
+│   │   ├── firebase/          # Admin SDK
+│   │   ├── persistence/       # Repository genérico + security scopes
+│   │   ├── profiles/          # RBAC — perfis
+│   │   ├── users/             # Usuários + Firebase Auth provisioning
+│   │   ├── reservas/          # Reservas, slots, vínculo visitantes
+│   │   ├── visitantes/        # Visitantes + workflow
+│   │   ├── mural/             # Avisos
+│   │   ├── reports/           # Relatório operacional (joins)
+│   │   ├── scripts/seed.ts    # Bootstrap idempotente
+│   │   ├── app.module.ts
+│   │   └── main.ts
+│   ├── requests.http
+│   └── firebase-key.json      # Dev local (gitignored)
+├── frontend/
+│   └── src/app/
+│       ├── pages/             # Wrappers finos por rota
+│       ├── modules/           # Componentes de feature por domínio
+│       ├── layouts/           # AppLayout, SegurancaLayout, RootLayout
+│       ├── router/            # paths, guards, AppRouter
+│       ├── components/        # Sidebar, Login, shadcn/ui
+│       ├── contexts/          # AuthContext, CondoDataContext
+│       ├── data/              # Repositories HTTP
+│       ├── domain/            # Tipos TypeScript
+│       ├── infra/             # firebaseClient, apiClient, queryParams
+│       ├── services/          # AuthService, condoQueries
+│       └── utils/             # permissions.ts, displayLabels.ts
+└── docs/
 ```
 
-A porta lê-se de `process.env.PORT`; o valor pode ser definido no ficheiro `.env` na raiz do backend, carregado pelo `ConfigModule` (ver abaixo).
+### 2.3 Mapeamento MVC
 
-### 5.2 Módulo raiz
-
-O ficheiro `backend/src/app.module.ts` importa:
-
-| Importação | Função |
-|------------|--------|
-| `ConfigModule.forRoot({ isGlobal: true })` | Carrega variáveis de ambiente (por exemplo `PORT`, credenciais Firebase em variáveis) para toda a aplicação. |
-| `FirebaseModule` | Regista o `FirebaseService` como módulo **global**, disponível para injeção em qualquer outro serviço. |
-| `AuthModule`, `ReservasModule`, `MuralModule` | Módulos de **domínio** do MVP; neste momento estão declarados como esqueleto (sem controllers próprios), servindo de fronteira clara para evolução. |
-| `AppController`, `AppService` | Controlador e serviço de exemplo na raiz da aplicação. |
-
-### 5.3 Exemplo explícito: Controller e Service
-
-**`backend/src/app.controller.ts`** — papel de **Controller** no MVC:
-
-- Decorador `@Controller()` define o prefixo de rota (vazio, logo a raiz `/`).
-- O método `getHello()` responde a `GET /` e delega a `AppService`.
-
-**`backend/src/app.service.ts`** — papel de **Service** (lógica de aplicação trivial neste exemplo):
-
-- Método `getHello()` devolve a cadeia de caracteres `'Ola mundo'`.
-
-Em trabalhos futuros, a lógica de negócio (validação de reservas, perfis de síndico e morador, etc.) concentrar-se-á em serviços dedicados dentro de `AuthModule`, `ReservasModule` e `MuralModule`, com controllers REST correspondentes.
-
-### 5.4 Integração Firebase Admin — `FirebaseModule` e `FirebaseService`
-
-**`backend/src/firebase/firebase.module.ts`**
-
-- `@Global()` torna o módulo visível em toda a aplicação sem repetir `imports` em cada módulo de funcionalidade.
-- Exporta `FirebaseService` para injeção (`providers` / `exports`).
-
-**`backend/src/firebase/firebase.service.ts`**
-
-- Implementa `OnModuleInit`: na inicialização do módulo, garante uma única inicialização do SDK (`if (!admin.apps.length)`).
-- `resolveCredential()` escolhe a credencial na seguinte ordem:
-  1. `GOOGLE_APPLICATION_CREDENTIALS` — caminho para ficheiro JSON da conta de serviço (adequado a CI e servidores).
-  2. `FIREBASE_SERVICE_ACCOUNT_JSON` — JSON inline (uso pontual; requer cuidado com segredos).
-  3. Ficheiro `firebase-key.json` no diretório de trabalho do backend (desenvolvimento local).
-- `getFirestore()` expõe a instância `admin.firestore()` para leitura e escrita no Firestore **com privilégios de administrador** (as regras de segurança do Firestore aplicam-se ao SDK cliente, não ao Admin SDK da mesma forma).
-
-**Nota de segurança académica:** o ficheiro de chave da conta de serviço **não deve** ser commitado no Git; o repositório deve listar `firebase-key.json` no `.gitignore` e documentar apenas o `.env.example`.
-
-### 5.5 Módulos de domínio (estado atual)
-
-| Módulo | Ficheiro | Comentário no código |
-|--------|----------|----------------------|
-| Autenticação / perfis | `backend/src/auth/auth.module.ts` | Reservado a regras de síndico e morador e, no servidor, verificação de token. |
-| Reservas | `backend/src/reservas/reservas.module.ts` | Reserva de áreas comuns e regras temporais. |
-| Mural | `backend/src/mural/mural.module.ts` | Avisos e reclamações com estados (ex.: aberto, resolvido). |
-
-Estes módulos constituem a **decomposição modular** do monólito, alinhada ao MVP descrito na documentação de produto.
-
-### 5.6 Testes automatizados
-
-- Testes unitários Jest: `backend/src/app.controller.spec.ts`.
-- Testes e2e: `backend/test/app.e2e-spec.ts` (sobe `AppModule`, portanto inicializa Firebase se as credenciais estiverem disponíveis).
+| Papel MVC | Vyzin |
+|-----------|-------|
+| **View** | Pages + modules React (`frontend/src/app/modules/`) |
+| **Controller** | `@Controller()` NestJS — rotas HTTP, DTOs, decorators |
+| **Model** | Entities + Firestore converters + Services + ScopedRepository |
 
 ---
 
-## 6. Frontend (React) — arquitetura e código
+## 3. Camada de persistência (`backend/src/persistence/`)
 
-### 6.1 Ferramenta de construção
+Abstração genérica sobre Firestore com autorização por entidade.
 
-O frontend utiliza **Create React App** (`react-scripts`), que abstrai Webpack e Babel. O código de entrada é `frontend/src/index.js`, que monta o componente raiz `App` no DOM.
+| Componente | Arquivo | Responsabilidade |
+|------------|---------|------------------|
+| `IRepository` | `interfaces/repository.interface.ts` | Contrato CRUD |
+| `FirestoreRepository` | `firestore/firestore.repository.ts` | Acesso Firestore tipado |
+| `ScopedRepository` | `firestore/scoped.repository.ts` | Decorator que aplica scope em read/write |
+| `RepositoryFactory` | `firestore/repository.factory.ts` | Factory por entidade (scoped / unscoped) |
+| `ISecurityScope` | `interfaces/security-scope.interface.ts` | Filtros de lista + assertCanRead/Write |
+| `OwnershipSecurityScope` | `scopes/ownership.security-scope.ts` | Ownership + bypass read/write separados |
+| `applyTextSearch` | `utils/text-search.util.ts` | Busca textual pós-query (servidor) |
 
-### 6.2 Configuração do cliente Firebase
+### Security scopes por entidade
 
-**`frontend/src/firebase/client.js`**
+| Entidade | Scope | Regra resumida |
+|----------|-------|----------------|
+| Reservas | `ReservationSecurityScope` | Morador vê/edita próprias; admin `manage_all`; porteiro lê todas (sem `manage`) |
+| Visitantes | `VisitorSecurityScope` | Por `authorizedBy`; bypass com `visitors:workflow` |
+| Usuários | `UserSecurityScope` | Porteiro vê só moradores |
+| Avisos / Perfis | `OpenSecurityScope` | RBAC apenas via `@RequireFunction` |
 
-- Importa `initializeApp` e `getAuth`.
-- Lê a configuração web a partir de variáveis de ambiente com prefixo `REACT_APP_` (exigência do CRA para expor variáveis ao bundle do browser).
-- Se faltar algum campo obrigatório (`apiKey`, `authDomain`, `projectId`, `appId`), não inicializa a aplicação Firebase e exporta `auth = null` e `firebaseReady = false`.
-
-As variáveis são documentadas em `frontend/.env.example`; o ficheiro `frontend/.env` (local) define `PORT` e as chaves do projeto.
-
-**Observação:** as chaves presentes na configuração web do Firebase são, por desenho da plataforma, **identificadores públicos** do projeto; a segurança depende de regras no Firestore/Storage, de validação de tokens no backend e de políticas no Firebase Console.
-
-### 6.3 Componente principal `App`
-
-**`frontend/src/App.js`**
-
-- Utiliza **hooks** do React: `useState` para estado local (utilizador, formulário, erros, modo login/registo) e `useEffect` para subscrever `onAuthStateChanged`.
-- **Fluxo de autenticação:**
-  - Modo “Entrar”: `signInWithEmailAndPassword(auth, email, password)`.
-  - Modo “Criar conta”: `createUserWithEmailAndPassword(...)`.
-  - “Sair”: `signOut(auth)`.
-- Enquanto `onAuthStateChanged` não conclui a primeira notificação, pode mostrar-se um estado de carregamento.
-- Se `firebaseReady` for falso, apresenta instruções para configurar o `.env`.
-
-Este componente concentra, no MVP, **apresentação e orquestração do fluxo de auth**; em evolução, pode extrair-se um `AuthForm` ou um contexto `AuthContext` para reutilização e testes mais finos.
-
-### 6.4 Estilo e identidade visual
-
-**`frontend/src/index.css`**
-
-- Define **variáveis CSS** (`:root`) para paleta: azul principal `#2563EB`, verde de sucesso `#10B981`, fundo `#F8FAFC`, texto `#1E293B`, entre outras.
-- O `body` aplica fundo e tipografia do sistema.
-
-**`frontend/src/App.css`**
-
-- Estilos do cabeçalho com logótipo (`public/logo-vyzin.png`), formulário de autenticação (abas, campos, botões) e painel de exemplo de estado (“Reserva confirmada”).
-
-### 6.5 Testes
-
-**`frontend/src/App.test.js`** — verifica, após estabilizar o estado assíncrono, a presença dos campos de e-mail e senha quando o Firebase está configurado nos testes (variáveis carregadas pelo CRA a partir do `.env` de desenvolvimento).
+Services usam `repositoryFactory.reservations({ user })` para operações autenticadas e `*Unscoped()` para joins internos (ex.: lookup de usuário no relatório).
 
 ---
 
-## 7. Fluxo de dados e evolução recomendada
+## 4. Backend (NestJS)
 
-### 7.1 Estado atual
+### 4.1 Bootstrap — `main.ts`
 
-1. O utilizador autentica-se no browser contra **Firebase Authentication**.
-2. O backend pode persistir dados no **Firestore** usando `FirebaseService`, ainda sem endpoints de domínio expostos além do `GET /` de exemplo.
+- CORS habilitado para `FRONTEND_ORIGIN` (padrão `http://localhost:3001`)
+- `ValidationPipe` global (`whitelist`, `transform`)
+- Porta: `process.env.PORT ?? 3000`
 
-### 7.2 Evolução alinhada à arquitetura em camadas
+### 4.2 Módulo raiz — `app.module.ts`
 
-1. Após login, o frontend obtém `user.getIdToken()` e envia pedidos `fetch` ou `axios` para `http://localhost:3000/...` com `Authorization: Bearer <token>`.
-2. Um **guard** ou **middleware** no Nest (ou um serviço injetado nos controllers) chama `admin.auth().verifyIdToken(token)` e associa o `uid` ao utilizador.
-3. Os **Services** de reservas e mural aplicam regras de negócio e leem/escrevem no Firestore com coleções bem definidas (por exemplo `reservas`, `avisos`, `chamados`).
+Importa: `ConfigModule`, `FirebaseModule`, `PersistenceModule`, `AuthModule`, `ProfilesModule`, `UsersModule`, `ReservationsModule`, `VisitorsModule`, `MuralModule`, `ReportsModule`.
+
+### 4.3 Firebase — `FirebaseService`
+
+Credenciais (ordem de prioridade):
+
+1. `GOOGLE_APPLICATION_CREDENTIALS`
+2. `FIREBASE_SERVICE_ACCOUNT_JSON`
+3. `firebase-key.json` no diretório `backend/`
+
+### 4.4 Autenticação e RBAC
+
+#### Guards globais (`AuthModule`)
+
+1. **`FirebaseAuthGuard`** — Bearer token → `verifyIdToken` → `request.user` (`uid`, `email`, `profileId`)
+2. **`FunctionGuard`** — carrega perfil via `ProfilesService.get(profileId)` → `user.functions[]` → valida `@RequireFunction`
+
+#### Catálogo de funções
+
+Fonte única: `backend/src/auth/functions/app-functions.ts`  
+Exposta ao frontend: `GET /functions` (requer `profiles:read`)
+
+| Função | Descrição |
+|--------|-----------|
+| `reservations:read` | Listar/visualizar reservas (escopo por perfil) |
+| `reservations:manage` | CRUD das próprias reservas |
+| `reservations:manage_all` | CRUD de qualquer reserva |
+| `visitors:read` / `visitors:manage` / `visitors:workflow` | Visitantes |
+| `announcements:read` / `announcements:manage` | Mural |
+| `information:read` / `information:edit` | Informações (UI) |
+| `users:read` / `users:manage` | Usuários |
+| `profiles:read` / `profiles:manage` | Perfis RBAC |
+| `reports:read` | Relatório operacional |
+
+### 4.5 Modelo de dados (Firestore)
+
+| Coleção | Campos principais | Relacionamentos |
+|---------|-------------------|-----------------|
+| `profiles` | `id`, `name`, `functions[]`, `isSystem` | → `users.profileId` |
+| `users` | `uid`, `name`, `email`, `cpf`, `phone`, `apartment?`, `block?`, `profileId` | claim `{ profileId }` |
+| `reservations` | `space`, `date`, `startTime`, `endTime`, `status`, `createdBy`, `linkedVisitorIds[]` | `createdBy` → user |
+| `visitors` | `name`, `cpf`, `visitType`, `status`, `authorizedBy`, … | `authorizedBy` → user |
+| `announcements` | `title`, `content`, `author`, `category`, `isPinned`, … | `author` string (sem FK) |
+
+### 4.6 API REST — referência
+
+**Base:** `http://localhost:3000`  
+**Auth:** `Authorization: Bearer <Firebase ID token>`
+
+| Método | Rota | Função(ões) |
+|--------|------|---------------|
+| GET | `/` | pública |
+| GET | `/auth/me` | autenticado |
+| GET | `/functions` | `profiles:read` |
+| CRUD | `/profiles`, `/profiles/:id` | `profiles:read` / `profiles:manage` |
+| CRUD | `/users`, `/users/:id` | `users:read` / `users:manage` |
+| GET/POST/PUT/DELETE | `/reservations`, `/reservations/:id` | `reservations:read` / `reservations:manage` |
+| GET | `/reservations/available-slots` | `reservations:read` |
+| POST/DELETE | `/reservations/:id/visitors/:visitorId` | `visitors:manage` (vínculo dedicado) |
+| CRUD | `/visitors`, `/visitors/:id` | `visitors:read` / `visitors:manage` |
+| PATCH | `/visitors/:id/status` | `visitors:workflow` |
+| CRUD | `/announcements`, `/announcements/:id` | `announcements:read` / `announcements:manage` |
+| GET | `/reports/operational` | `reports:read` |
+
+**Filtros de query comuns:** `status`, `date`, `search` (busca no servidor). Relatório: `from`, `to`, `reservationStatus`, `space`, `visitorStatus`, `visitType`, `search`.
+
+Respostas de reserva incluem enriquecimento: `createdByName`, `createdByEmail`, `createdByDisplay`.
+
+Exemplos: `backend/requests.http`.
+
+### 4.7 Regras implementadas nos services
+
+| Service | Regra chave |
+|---------|-------------|
+| `ReservationsService` | Validação de slot (`assertSlotAvailable`); revalidação só se horário/espaço mudou; `linkVisitor`/`unlinkVisitor` com auth dedicada |
+| `VisitorsService` | Status default `waiting`; `authorizedBy` = uid do operador |
+| `ProfilesService` | Perfil sempre lido do Firestore; seed merge de novas funções |
+| `ReportsService` | Joins: reserva→user→perfil, reserva→visitantes, visitante→autorizador→reserva |
+| `UsersService` | Provisiona Auth + claim + Firestore |
+
+### 4.8 Seed
+
+```bash
+cd backend && npm run seed
+```
+
+Idempotente — perfis `admin`, `doorman`, `resident`; merge de funções novas em perfis existentes; admin sempre recebe catálogo completo (`ALL_FUNCTIONS`).
 
 ---
 
-## 8. Execução local (resumo operacional)
+## 5. Frontend (React)
 
-| Passo | Backend | Frontend |
-|-------|---------|----------|
-| Instalar dependências | `cd backend && npm install` | `cd frontend && npm install` |
-| Credenciais | Copiar `backend/.env.example` para `.env`; colocar `firebase-key.json` ou variáveis de credencial conforme documentado. | Copiar `frontend/.env.example` para `.env` e preencher `REACT_APP_FIREBASE_*`; `PORT=3001` se desejado. |
-| Arranque em desenvolvimento | `npm run start:dev` | `npm start` |
-| Portas típicas | 3000 | 3001 |
+### 5.1 Entrada e roteamento
+
+- `index.html` → `main.tsx` → `App.tsx` → `AppRouter`
+- Rotas em `router/index.tsx`; paths centralizados em `router/paths.ts`
+- `RequirePermission` redireciona ao dashboard se flag ausente
+- Layouts: `RootLayout` (login), `AppLayout` (sidebar + outlet), `SegurancaLayout` (submenu)
+
+### 5.2 Estrutura por feature
+
+| Rota | Page | Module |
+|------|------|--------|
+| `/dashboard` | `pages/dashboard/page.tsx` | `modules/dashboard/VyzinDashboard` |
+| `/reservations` | `pages/reservations/page.tsx` | `modules/reservations/Reservas` |
+| `/visitantes` | `pages/visitantes/page.tsx` | `modules/visitantes/Visitantes` |
+| `/mural` | `pages/mural/page.tsx` | `modules/mural/MuralAvisos` |
+| `/relatorio` | `pages/relatorio/page.tsx` | `modules/relatorio/RelatorioOperacional` |
+| `/informacoes` | `pages/informacoes/page.tsx` | `modules/informacoes/Informacoes` |
+| `/seguranca/usuarios` | `pages/seguranca/usuarios/page.tsx` | `modules/seguranca/usuarios/UserManagement` |
+| `/seguranca/perfis` | `pages/seguranca/perfis/page.tsx` | `modules/seguranca/perfis/ProfileManagement` |
+
+### 5.3 Camadas
+
+| Camada | Pasta | Responsabilidade |
+|--------|-------|------------------|
+| Domínio | `domain/` | Tipos: user, profile, reservation, visitor, announcement, report, appFunction |
+| Infra | `infra/` | `firebaseClient`, `apiClient`, `queryParams` |
+| Dados | `data/` | Repositories HTTP |
+| Contextos | `contexts/` | Auth + dados condomínio (cache local para vínculos) |
+| Políticas | `utils/permissions.ts` | Flags UI derivadas de `AppFunction[]` |
+
+### 5.4 Repositories
+
+| Repository | Endpoints principais |
+|------------|---------------------|
+| `authRepository` | `/auth/me`, `/functions` |
+| `reservationRepository` | `/reservations`, `/available-slots`, link/unlink visitante |
+| `visitorRepository` | `/visitors`, `/visitors/:id/status` |
+| `announcementRepository` | `/announcements` |
+| `userRepository` | `/users` |
+| `profileRepository` | `/profiles` |
+| `reportRepository` | `/reports/operational` |
+
+### 5.5 Navegação e RBAC na UI
+
+`Sidebar.tsx` filtra itens por `getUserPermissions(functions)`.
+
+| Rota | Permissão UI |
+|------|--------------|
+| `/dashboard` | `canAccessDashboard` (sempre) |
+| `/reservations` | `canAccessReservations` |
+| `/mural` | `canAccessNoticeBoard` |
+| `/visitantes` | `canAccessVisitors` |
+| `/relatorio` | `canAccessReports` |
+| `/informacoes` | `canAccessInformation` |
+| `/seguranca/usuarios` | `canManageUsers` |
+| `/seguranca/perfis` | `canAccessProfiles` |
 
 ---
 
-## 9. Conclusão
+## 6. Relatório operacional
 
-O Vyzin implementa um **monorepo** com **frontend React** e **backend NestJS**, com **Firebase** como plataforma de autenticação (cliente) e persistência (servidor via Admin SDK). A correspondência com **MVC** é explícita: controllers e services no Nest; modelo de dados e persistência centralizados no servidor através do `FirebaseService`; view no React. Os módulos `Auth`, `Reservas` e `Mural` delimitam o MVP e servem de base para a expansão documental e de código exigida ao longo do semestre.
+**Endpoint:** `GET /reports/operational`
+
+**Joins aplicados:**
+
+```
+Reserva.createdBy        → User (nome, email, apto, bloco) → Profile.name
+Reserva.linkedVisitorIds → Visitor[]
+Visitor.authorizedBy     → User → Profile
+Visitor.id               → Reservation (lookup reverso em linkedVisitorIds)
+```
+
+Respeita security scopes: morador vê apenas dados permitidos; porteiro/admin veem escopo ampliado conforme perfil.
+
+**Frontend:** filtros de período, status, espaço, busca; abas Reservas/Visitantes; export CSV.
 
 ---
 
-## 10. Referências bibliográficas e documentação oficial
+## 7. Execução local
 
-- NestJS. *Documentation*. https://docs.nestjs.com  
-- Meta Open Source. *React — Documentação*. https://react.dev  
-- Google. *Firebase Documentation* (Authentication, Firestore, Admin SDK). https://firebase.google.com/docs  
-- Sommerville, I. *Software Engineering* (conceitos de arquitetura em camadas e MVC).  
+| Passo | Comando |
+|-------|---------|
+| Backend | `cd backend && npm install && cp .env.example .env && npm run seed && npm run start:dev` |
+| Frontend | `cd frontend && npm install && cp .env.example .env && npm run dev` |
+
+Guia completo: [SETUP_TESTE.md](./SETUP_TESTE.md).
+
+```bash
+cd backend && npm run build
+cd frontend && npm run build
+```
 
 ---
 
-*Documento elaborado para apoio à disciplina de Arquitetura de Software / Programação Web. Pode ser anexado a relatórios ou adaptado (capa institucional, nomes dos autores, número do grupo) conforme normas da instituição.*
+## 8. Limitações conhecidas (MVP)
+
+| Item | Estado |
+|------|--------|
+| Módulo Informações | Sem API; conteúdo estático no frontend |
+| Likes/comentários avisos | Campos numéricos sem API de interação |
+| Multi-condomínio | Não suportado |
+| Dashboard — stats/cards | Parte dos números ainda mockados; avisos recentes vêm da API |
+| Export PDF | Não implementado (CSV disponível no relatório) |
+
+---
+
+## 9. Referências
+
+- [NestJS](https://docs.nestjs.com) · [React](https://react.dev) · [Vite](https://vite.dev) · [Firebase](https://firebase.google.com/docs)
+
+---
+
+_Documento técnico do repositório Vyzin. Para visão de produto, ver [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md)._

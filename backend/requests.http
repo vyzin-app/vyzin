@@ -1,0 +1,245 @@
+# Vyzin API - exemplos de requisicoes
+# Use a extensao "REST Client" (VS Code/Cursor) e clique em "Send Request".
+# Backend rodando: `npm run start:dev` (porta 3000). Antes, rode `npm run seed`.
+#
+# AUTENTICACAO: todas as rotas (exceto GET /) exigem um Firebase ID token.
+# Pegue um token logando com o SDK no frontend (localStorage) ou via REST:
+# POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=API_KEY
+# Cole o token em @token abaixo.
+
+@baseUrl = http://localhost:3000
+@token = COLE_O_ID_TOKEN_AQUI
+
+###############################################################################
+# AUTH / CATALOGO
+###############################################################################
+
+### Healthcheck (publico)
+GET {{baseUrl}}/
+
+### Dados do usuario logado (perfil + funcoes)
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### Catalogo de funcoes (requer PROFILES_READ)
+GET {{baseUrl}}/functions
+Authorization: Bearer {{token}}
+
+###############################################################################
+# PERFIS (/profiles) - requer PROFILES_READ / PROFILES_MANAGE
+###############################################################################
+
+### Listar perfis
+GET {{baseUrl}}/profiles
+Authorization: Bearer {{token}}
+
+### Criar perfil
+POST {{baseUrl}}/profiles
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Zelador",
+  "description": "Acesso operacional",
+  "functions": ["reservations:read", "visitors:read", "announcements:read"]
+}
+
+### Atualizar perfil
+PUT {{baseUrl}}/profiles/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Zelador",
+  "description": "Acesso operacional atualizado",
+  "functions": ["reservations:read", "visitors:read", "visitors:workflow", "announcements:read"]
+}
+
+### Excluir perfil
+DELETE {{baseUrl}}/profiles/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+
+###############################################################################
+# USUARIOS (/users) - requer USERS_READ / USERS_MANAGE
+###############################################################################
+
+### Listar usuarios
+GET {{baseUrl}}/users
+Authorization: Bearer {{token}}
+
+### Criar usuario (provisiona no Firebase Auth + claim profileId)
+POST {{baseUrl}}/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Maria Souza",
+  "email": "maria@vyzin.com",
+  "password": "maria123",
+  "cpf": "333.333.333-33",
+  "phone": "(61) 93333-3333",
+  "apartment": "101",
+  "block": "A",
+  "profileId": "resident"
+}
+
+### Atualizar usuario
+PUT {{baseUrl}}/users/COLE_O_UID_AQUI
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Maria Souza",
+  "cpf": "333.333.333-33",
+  "phone": "(61) 93333-3333",
+  "apartment": "102",
+  "block": "A",
+  "profileId": "resident"
+}
+
+### Excluir usuario
+DELETE {{baseUrl}}/users/COLE_O_UID_AQUI
+Authorization: Bearer {{token}}
+
+###############################################################################
+# RESERVAS (/reservations)
+###############################################################################
+
+### Criar reserva
+POST {{baseUrl}}/reservations
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "space": "Salao de Festas",
+  "date": "2026-07-20",
+  "startTime": "18:00",
+  "endTime": "23:00",
+  "notes": "Aniversario do apto 302",
+  "status": "confirmed",
+  "linkedVisitorIds": []
+}
+
+### Horarios disponiveis de um espaco em uma data
+GET {{baseUrl}}/reservations/available-slots?space=Sal%C3%A3o%20de%20Festas&date=2026-07-20
+Authorization: Bearer {{token}}
+
+### Listar / filtrar reservas
+GET {{baseUrl}}/reservations?status=confirmed&date=2026-07-20&search=salao
+Authorization: Bearer {{token}}
+
+### Vincular visitante a reserva (requer VISITORS_MANAGE)
+POST {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
+Authorization: Bearer {{token}}
+
+### Desvincular visitante da reserva
+DELETE {{baseUrl}}/reservations/COLE_O_ID_RESERVA/visitors/COLE_O_ID_VISITANTE
+Authorization: Bearer {{token}}
+
+### Buscar / atualizar / excluir
+GET {{baseUrl}}/reservations/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+
+PUT {{baseUrl}}/reservations/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "space": "Salao de Festas",
+  "date": "2026-07-20",
+  "startTime": "19:00",
+  "endTime": "23:30",
+  "notes": "Horario ajustado",
+  "status": "confirmed",
+  "linkedVisitorIds": []
+}
+
+DELETE {{baseUrl}}/reservations/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+
+###############################################################################
+# VISITANTES (/visitors)
+###############################################################################
+
+### Criar visitante
+POST {{baseUrl}}/visitors
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Joao da Silva",
+  "cpf": "123.456.789-00",
+  "phone": "(61) 99999-0000",
+  "email": "joao@example.com",
+  "purpose": "Visita ao apto 101",
+  "date": "2026-07-15",
+  "time": "14:30",
+  "notes": "Entregador",
+  "visitType": "apartment"
+}
+
+### Listar / filtrar
+GET {{baseUrl}}/visitors?status=waiting&search=ana
+Authorization: Bearer {{token}}
+
+### Workflow de status (autorizar/negar/saida) - requer VISITORS_WORKFLOW
+PATCH {{baseUrl}}/visitors/COLE_O_ID_AQUI/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "authorized"
+}
+
+### Excluir visitante
+DELETE {{baseUrl}}/visitors/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+
+###############################################################################
+# MURAL (/announcements)
+###############################################################################
+
+### Criar aviso
+POST {{baseUrl}}/announcements
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Manutencao da piscina",
+  "content": "A piscina ficara fechada na proxima segunda para limpeza.",
+  "category": "maintenance",
+  "isPinned": true,
+  "isImportant": false
+}
+
+### Listar / filtrar
+GET {{baseUrl}}/announcements?category=maintenance
+Authorization: Bearer {{token}}
+
+### Atualizar / excluir
+PUT {{baseUrl}}/announcements/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Manutencao da piscina (reagendada)",
+  "content": "Nova data: terca-feira.",
+  "category": "maintenance",
+  "isPinned": false,
+  "isImportant": true
+}
+
+DELETE {{baseUrl}}/announcements/COLE_O_ID_AQUI
+Authorization: Bearer {{token}}
+
+###############################################################################
+# RELATORIOS (/reports) - requer REPORTS_READ
+###############################################################################
+
+### Relatorio operacional (joins reservas + visitantes + usuarios + perfis)
+GET {{baseUrl}}/reports/operational?from=2026-01-01&to=2026-12-31
+Authorization: Bearer {{token}}
+
+### Relatorio com filtros
+GET {{baseUrl}}/reports/operational?from=2026-06-01&to=2026-06-30&reservationStatus=confirmed&space=Churrasqueira%202&search=maria
+Authorization: Bearer {{token}}
