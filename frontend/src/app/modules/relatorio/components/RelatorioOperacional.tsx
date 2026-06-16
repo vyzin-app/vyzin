@@ -23,20 +23,12 @@ import {
   Users,
 } from 'lucide-react'
 import { reportRepository } from '@/app/data/reportRepository'
+import { reservationRepository } from '@/app/data/reservationRepository'
 import {
   OperationalReport,
   OperationalReportFilter,
 } from '@/app/domain/report'
 import { useAuth } from '@/app/contexts/AuthContext'
-
-const RESERVATION_SPACES = [
-  'Salão de Festas',
-  'Churrasqueira 1',
-  'Churrasqueira 2',
-  'Quadra Esportiva',
-  'Área da Piscina',
-  'Sala de Reuniões',
-]
 
 function formatDateBR(dateStr: string) {
   if (!dateStr) return '—'
@@ -106,6 +98,7 @@ export function RelatorioOperacional() {
   const [report, setReport] = useState<OperationalReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reservationSpaces, setReservationSpaces] = useState<string[]>([])
 
   const loadReport = useCallback(async () => {
     setLoading(true)
@@ -132,6 +125,12 @@ export function RelatorioOperacional() {
     }, 300)
     return () => clearTimeout(timer)
   }, [loadReport])
+
+  useEffect(() => {
+    void reservationRepository
+      .listSpaces()
+      .then((spaces) => setReservationSpaces(spaces.map((space) => space.name)))
+  }, [])
 
   function exportReservationsCsv() {
     if (!report) return
@@ -311,7 +310,7 @@ export function RelatorioOperacional() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  {RESERVATION_SPACES.map((space) => (
+                  {reservationSpaces.map((space) => (
                     <SelectItem key={space} value={space}>
                       {space}
                     </SelectItem>

@@ -1,62 +1,127 @@
-# Vyzin — Backend (NestJS)
+# Backend Vyzin — API NestJS
 
-API REST do **Vyzin** — gestão condominial com Firebase Auth, Firestore e RBAC por perfis.
+API REST do sistema Vyzin. Persistência em **Cloud Firestore**, autenticação via **Firebase Auth** (sessão por cookie httpOnly).
 
-Documentação completa: [docs/DOCUMENTACAO_TECNICA.md](../docs/DOCUMENTACAO_TECNICA.md)
+Documentação completa: [../docs/DOCUMENTACAO_TECNICA.md](../docs/DOCUMENTACAO_TECNICA.md)
 
-## Requisitos
-
-- Node.js 18+
-- Projeto Firebase `vyzin-app` com Auth (e-mail/senha) e Firestore
-- `firebase-key.json` na pasta `backend/` (ou variáveis em `.env`)
-
-## Setup
-
-```bash
-cp .env.example .env
-npm install
-npm run seed        # perfis, usuários e dados demo
-npm run start:dev   # http://localhost:3000
-```
+---
 
 ## Scripts
 
 | Comando | Descrição |
 |---------|-----------|
-| `npm run start:dev` | Servidor com hot-reload |
-| `npm run build` | Compila TypeScript |
-| `npm run seed` | Bootstrap idempotente (perfis + demo) |
-| `npm run test` | Testes unitários (Jest) |
-| `npm run test:e2e` | Testes e2e |
+| `npm run emulators` | Sobe emuladores Auth + Firestore (UI :4000) |
+| `npm run start:dev:local` | Backend apontando para emuladores |
+| `npm run start:dev` | Backend com Firebase real (`.env` sem vars de emulador) |
+| `npm run seed:local` | Popula emuladores (com emulators rodando) |
+| `npm run seed` | Popula Firestore real |
+| `npm test` | Testes unitários (14) |
+| `npm run test:e2e` | Testes e2e de todos endpoints (46) |
+| `npm run build` | Compila para `dist/` |
 
-## Estrutura principal
+---
+
+## Desenvolvimento local (emuladores)
+
+```bash
+# Terminal 1
+npm run emulators
+
+# Terminal 2
+cp .env.example .env
+npm run start:dev:local
+
+# Terminal 3 (primeira vez)
+npm run seed:local
+```
+
+API: http://localhost:3000
+
+---
+
+## Variáveis de ambiente
+
+Ver `.env.example`. Principais:
+
+| Variável | Descrição |
+|----------|-----------|
+| `PORT` | Porta HTTP (padrão 3000) |
+| `FRONTEND_ORIGIN` | Origin CORS (padrão http://localhost:3001) |
+| `FIRESTORE_EMULATOR_HOST` | Emulador Firestore (dev local) |
+| `FIREBASE_AUTH_EMULATOR_HOST` | Emulador Auth (dev local) |
+| `FIREBASE_WEB_API_KEY` | Web API Key (ou `fake-api-key` no emulador) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Service account (produção) |
+
+---
+
+## Autenticação
+
+| Rota | Descrição |
+|------|-----------|
+| `POST /auth/login` | Email/senha → cookie `vyzin_session` |
+| `POST /auth/logout` | Revoga sessão |
+| `GET /auth/me` | Usuário + perfil + funções |
+
+Rotas protegidas exigem cookie ou `Authorization: Bearer <token>`.
+
+RBAC: `@RequireFunction(...)` + `FunctionGuard` (funções lidas do Firestore).
+
+---
+
+## Módulos
+
+| Módulo | Prefixo | Descrição |
+|--------|---------|-----------|
+| Auth | `/auth`, `/functions` | Sessão e catálogo RBAC |
+| Profiles | `/profiles` | Perfis e funções |
+| Users | `/users` | Usuários |
+| Reservations | `/reservations` | Reservas, slots, espaços |
+| Visitors | `/visitors` | Visitantes + workflow |
+| PreAuthorizations | `/pre-authorizations` | Pré-autorizados |
+| Mural | `/announcements` | Avisos |
+| Information | `/information` | Dados do condomínio |
+| Reports | `/reports` | Relatório operacional |
+
+---
+
+## Testar endpoints
+
+Arquivo `requests.http` — exemplos para REST Client (VS Code/Cursor).
+
+1. `POST /auth/login` com `admin@vyzin.com` / `admin123`
+2. Demais requests usam o cookie de sessão
+
+---
+
+## Estrutura `src/`
 
 ```
 src/
-├── auth/           # Guards, decorators, catálogo AppFunction
-├── firebase/       # Admin SDK
-├── persistence/    # Repository genérico + security scopes
-├── profiles/       # RBAC — perfis
-├── users/          # Usuários + provisioning Firebase Auth
-├── reservas/       # Reservas + slots + vínculo visitantes
-├── visitantes/     # Visitantes + workflow portaria
-├── mural/          # Avisos
-├── reports/        # Relatório operacional (joins)
+├── auth/              # Guards, sessão, AppFunction
+├── firebase/          # Admin SDK
+├── persistence/       # Repository + security scopes
+├── profiles/
+├── users/
+├── reservas/
+├── visitantes/
+├── pre-authorizations/
+├── mural/
+├── informacoes/
+├── reports/
 ├── scripts/seed.ts
 ├── app.module.ts
 └── main.ts
 ```
 
-## Testes manuais de API
+Mapa detalhado: [../docs/MAPA_DO_CODIGO.md](../docs/MAPA_DO_CODIGO.md)
 
-Use `requests.http` com a extensão REST Client (VS Code/Cursor). Obtenha um ID token Firebase após login no frontend ou via Identity Toolkit API.
+---
 
-## Usuários de teste (após seed)
+## Testes
 
-| E-mail | Senha | Perfil |
-|--------|-------|--------|
-| admin@vyzin.com | admin123 | Administrador |
-| porteiro@vyzin.com | porteiro123 | Porteiro |
-| morador@vyzin.com | morador123 | Morador |
+```bash
+npm test           # unitários
+npm run test:e2e   # integração (memory store + Bearer test:<profileId>)
+```
 
-Após alterar funções de perfil no seed, faça **logout/login** no frontend para recarregar permissões.
+Guia: [../docs/TESTES.md](../docs/TESTES.md)

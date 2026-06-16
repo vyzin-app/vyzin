@@ -6,20 +6,22 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ProfilesService } from 'src/profiles/services/profiles.service';
+import { UsersService } from 'src/users/services/users.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { REQUIRED_FUNCTIONS_KEY } from '../decorators/require-function.decorator';
 import { AppFunction } from '../functions/app-functions';
 import { AuthenticatedRequest } from '../types/authenticated-user';
 
 /**
- * Resolves the caller's profile (cached) into its functions, attaches them to
- * the request, and enforces the functions declared by `@RequireFunction`.
+ * Resolves the caller's profile from Firestore (users + profiles), attaches
+ * functions to the request, and enforces `@RequireFunction`.
  */
 @Injectable()
 export class FunctionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly profilesService: ProfilesService,
+    private readonly usersService: UsersService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -37,13 +39,13 @@ export class FunctionGuard implements CanActivate {
       throw new ForbiddenException('Usuario nao autenticado.');
     }
 
-    if (user.profileId) {
-      try {
-        const profile = await this.profilesService.get(user.profileId);
-        user.functions = profile.functions;
-      } catch {
-        user.functions = [];
-      }
+    try {
+      const account = await this.usersService.getUserByIdInternal(user.uid);
+      user.profileId = account.profileId;
+      const profile = await this.profilesService.get(account.profileId);
+      user.functions = profile.functions;
+    } catch {
+      user.functions = [];
     }
 
     const required =

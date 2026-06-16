@@ -47,10 +47,13 @@ import {
 import { useCondoData, Visitor, VisitType } from '@/app/contexts/CondoDataContext'
 import { reservationRepository } from '@/app/data/reservationRepository'
 import { visitorRepository } from '@/app/data/visitorRepository'
+import { preAuthorizationRepository } from '@/app/data/preAuthorizationRepository'
+import type { PreAuthorization } from '@/app/domain/preAuthorization'
 import { Reservation } from '@/app/domain/reservation'
 import { useAuth } from '@/app/contexts/AuthContext'
 import { getUserPermissions } from '@/app/utils/permissions'
 import { display } from '@/app/utils/displayLabels'
+import { isVisitSlotInPast, todayISO } from '@/app/utils/dates'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -76,6 +79,13 @@ function formatDateBR(dateStr: string) {
   const [y, m, d] = dateStr.split('-')
   return `${d}/${m}/${y}`
 }
+
+/** Pre-defined arrival times in 30-minute steps (00:00 → 23:30). */
+const TIME_SLOTS: string[] = Array.from({ length: 48 }, (_, i) => {
+  const hours = String(Math.floor(i / 2)).padStart(2, '0')
+  const minutes = i % 2 === 0 ? '00' : '30'
+  return `${hours}:${minutes}`
+})
 
 const statusConfig: Record<
   Visitor['status'],
@@ -147,44 +157,6 @@ const EMPTY_FORM: VisitorForm = {
   linkedReservationId: '',
 }
 
-// ─── Pre-authorised (local only – not part of shared context) ─────────────────
-
-interface PreAuthorized {
-  id: string
-  name: string
-  cpf: string
-  schedule: string
-  validUntil: string
-  active: boolean
-}
-
-const SEED_PRE_AUTH: PreAuthorized[] = [
-  {
-    id: 'pa1',
-    name: 'Diarista - Joana Souza',
-    cpf: '123.987.456-78',
-    schedule: 'Toda segunda-feira, 08:00',
-    validUntil: '2026-06-30',
-    active: true,
-  },
-  {
-    id: 'pa2',
-    name: 'Personal Trainer - Lucas Martins',
-    cpf: '789.456.123-90',
-    schedule: 'Terça e quinta, 18:00',
-    validUntil: '2026-05-15',
-    active: true,
-  },
-  {
-    id: 'pa3',
-    name: 'Avó - Dona Maria',
-    cpf: '321.654.987-00',
-    schedule: 'Livre acesso',
-    validUntil: '2026-12-31',
-    active: true,
-  },
-]
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function Visitantes({
@@ -238,11 +210,11 @@ export function Visitantes({
   }
 
   // Pre-authorised dialog
-  const [preAuthorized, setPreAuthorized] =
-    useState<PreAuthorized[]>(SEED_PRE_AUTH)
+  const [preAuthorized, setPreAuthorized] = useState<PreAuthorization[]>([])
+  const [preAuthLoading, setPreAuthLoading] = useState(false)
   const [isPreAuthOpen, setIsPreAuthOpen] = useState(false)
   const [isPreAuthDeleteOpen, setIsPreAuthDeleteOpen] = useState(false)
-  const [editingPreAuth, setEditingPreAuth] = useState<PreAuthorized | null>(
+  const [editingPreAuth, setEditingPreAuth] = useState<PreAuthorization | null>(
     null,
   )
   const [deletingPreAuthId, setDeletingPreAuthId] = useState<string | null>(
@@ -285,6 +257,16 @@ export function Visitantes({
     setActiveReservations(confirmed)
   }, [])
 
+  const loadPreAuthorized = useCallback(async () => {
+    setPreAuthLoading(true)
+    try {
+      const data = await preAuthorizationRepository.list(searchQuery.trim() || undefined)
+      setPreAuthorized(data)
+    } finally {
+      setPreAuthLoading(false)
+    }
+  }, [searchQuery])
+
   useEffect(() => {
     const timer = setTimeout(() => {
       void loadVisitors()
@@ -297,6 +279,14 @@ export function Visitantes({
     void loadActiveReservations()
   }, [loadActiveReservations])
 
+  useEffect(() => {
+    if (activeTab !== 'preauthorized') return
+    const timer = setTimeout(() => {
+      void loadPreAuthorized()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [activeTab, loadPreAuthorized])
+
   const refreshList = useCallback(async () => {
     await Promise.all([loadVisitors(), loadStats(), loadActiveReservations()])
   }, [loadVisitors, loadStats, loadActiveReservations])
@@ -304,7 +294,7 @@ export function Visitantes({
   // ── Visitor CRUD ──
   function openCreate() {
     setEditingVisitor(null)
-    setForm(EMPTY_FORM)
+    setForm({ ...EMPTY_FORM, date: todayISO() })
     setIsDialogOpen(true)
   }
 
@@ -327,6 +317,10 @@ export function Visitantes({
   }
 
   async function saveVisitor() {
+    if (isVisitSlotInPast(form.date, form.time)) {
+      return
+    }
+
     const payload: Omit<Visitor, 'id'> = {
       name: form.name,
       cpf: form.cpf,
@@ -338,7 +332,7 @@ export function Visitantes({
       notes: form.notes,
       visitType: form.visitType,
       status: editingVisitor?.status ?? 'waiting',
-      authorizedBy: editingVisitor?.authorizedBy ?? 'Aguardando autorização',
+      authorizedBy: editingVisitor?.authorizedBy ?? '',
       exitTime: editingVisitor?.exitTime,
     }
 
@@ -370,7 +364,7 @@ export function Visitantes({
   }
 
   async function authorizeVisitor(id: string) {
-    await updateVisitor(id, { status: 'authorized', authorizedBy: 'Portaria' })
+    await updateVisitor(id, { status: 'authorized' })
     await refreshList()
   }
   async function denyVisitor(id: string) {
@@ -392,7 +386,7 @@ export function Visitantes({
     setPreAuthForm({ name: '', cpf: '', schedule: '', validUntil: '' })
     setIsPreAuthOpen(true)
   }
-  function openEditPreAuth(pa: PreAuthorized) {
+  function openEditPreAuth(pa: PreAuthorization) {
     setEditingPreAuth(pa)
     setPreAuthForm({
       name: pa.name,
@@ -402,32 +396,31 @@ export function Visitantes({
     })
     setIsPreAuthOpen(true)
   }
-  function savePreAuth() {
+  async function savePreAuth() {
     if (editingPreAuth) {
-      setPreAuthorized((prev) =>
-        prev.map((pa) =>
-          pa.id === editingPreAuth.id ? { ...pa, ...preAuthForm } : pa,
-        ),
-      )
+      await preAuthorizationRepository.update(editingPreAuth.id, preAuthForm)
     } else {
-      setPreAuthorized((prev) => [
-        ...prev,
-        { id: `pa${Date.now()}`, ...preAuthForm, active: true },
-      ])
+      await preAuthorizationRepository.create(preAuthForm)
     }
     setIsPreAuthOpen(false)
+    await loadPreAuthorized()
   }
-  function confirmDeletePreAuth() {
+  async function confirmDeletePreAuth() {
     if (deletingPreAuthId) {
-      setPreAuthorized((prev) =>
-        prev.filter((pa) => pa.id !== deletingPreAuthId),
-      )
+      await preAuthorizationRepository.remove(deletingPreAuthId)
       setDeletingPreAuthId(null)
       setIsPreAuthDeleteOpen(false)
+      await loadPreAuthorized()
     }
   }
 
-  const isFormValid = form.name && form.cpf && form.purpose
+  const isFormValid =
+    form.name &&
+    form.cpf &&
+    form.purpose &&
+    form.date &&
+    form.time &&
+    !isVisitSlotInPast(form.date, form.time)
 
   // ── Render ──
   return (
@@ -600,8 +593,20 @@ export function Visitantes({
                       </div>
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 flex-shrink-0" />
-                        {visitor.authorizedBy}
+                        Cadastrado por:{' '}
+                        {visitor.createdByDisplay ??
+                          visitor.createdByName ??
+                          '—'}
                       </div>
+                      {visitor.authorizedByDisplay && (
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                          {visitor.status === 'denied'
+                            ? 'Recusado por: '
+                            : 'Autorizado por: '}
+                          {visitor.authorizedByDisplay}
+                        </div>
+                      )}
                     </div>
 
                     {/* Reservation link badge */}
@@ -905,17 +910,43 @@ export function Visitantes({
                   <Label>Data</Label>
                   <Input
                     type="date"
+                    min={todayISO()}
                     value={form.date}
-                    onChange={(e) => setForm({ ...form, date: e.target.value })}
+                    onChange={(e) => {
+                      const date = e.target.value
+                      setForm((current) => ({
+                        ...current,
+                        date,
+                        time:
+                          date && current.time && isVisitSlotInPast(date, current.time)
+                            ? ''
+                            : current.time,
+                      }))
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Horário</Label>
-                  <Input
-                    type="time"
+                  <Select
                     value={form.time}
-                    onChange={(e) => setForm({ ...form, time: e.target.value })}
-                  />
+                    onValueChange={(v) => setForm({ ...form, time: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o horário" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {TIME_SLOTS.map((slot) => {
+                        const isPast =
+                          form.date !== '' && isVisitSlotInPast(form.date, slot)
+                        return (
+                          <SelectItem key={slot} value={slot} disabled={isPast}>
+                            {slot}
+                            {isPast ? ' (passado)' : ''}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2 col-span-2">
                   <Label>Observações</Label>

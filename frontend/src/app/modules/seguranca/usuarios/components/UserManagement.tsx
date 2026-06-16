@@ -140,15 +140,29 @@ export function UserManagement() {
         ? { search, profileId: 'resident' as const }
         : { search }
 
-      const [userList, profileList, scopedUsers, residentUsers] =
-        await Promise.all([
-          userRepository.list(listParams),
-          profileRepository.list(),
-          userRepository.list(listParams),
-          userRepository.list({ search, profileId: 'resident' }),
-        ])
+      // Doorman lacks `profiles:read`; avoid the 403 by using a local fallback
+      // (it only ever manages residents anyway).
+      const profileListPromise: Promise<Profile[]> = isDoorman
+        ? Promise.resolve([
+            {
+              id: 'resident',
+              name: 'Morador',
+              description: '',
+              functions: [],
+              isSystem: true,
+            },
+          ])
+        : profileRepository.list()
 
-      const total = scopedUsers.length
+      const [userList, profileList, residentUsers] = await Promise.all([
+        userRepository.list(listParams),
+        profileListPromise,
+        isDoorman
+          ? Promise.resolve([])
+          : userRepository.list({ search, profileId: 'resident' }),
+      ])
+
+      const total = userList.length
       const residents = isDoorman ? total : residentUsers.length
 
       setUsers(userList)

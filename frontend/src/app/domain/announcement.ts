@@ -15,4 +15,6 @@ export interface Announcement {
   isImportant: boolean
   likes: number
   comments: number
+  authorName?: string
+  authorDisplay?: string
 }

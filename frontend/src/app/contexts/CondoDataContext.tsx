@@ -133,15 +133,25 @@ export function CondoDataProvider({ children }: { children: ReactNode }) {
     refresh,
 
     addVisitor: async (visitor) => {
-      const { authorizedBy: _authorizedBy, ...rest } = visitor
+      const {
+        authorizedBy: _authorizedBy,
+        createdBy: _createdBy,
+        createdByName: _createdByName,
+        createdByDisplay: _createdByDisplay,
+        authorizedByName: _authorizedByName,
+        authorizedByDisplay: _authorizedByDisplay,
+        ...rest
+      } = visitor
       const id = await visitorRepository.create(rest)
       await refreshVisitors()
       return id
     },
 
     updateVisitor: async (id, patch) => {
-      const existing = visitors.find((visitor) => visitor.id === id)
-      if (!existing) return
+      let existing = visitors.find((visitor) => visitor.id === id)
+      if (!existing) {
+        existing = await visitorRepository.get(id)
+      }
       const touchesCore = VISITOR_CORE_KEYS.some((key) => key in patch)
       if (!touchesCore && patch.status) {
         await visitorRepository.updateStatus(
@@ -177,8 +187,10 @@ export function CondoDataProvider({ children }: { children: ReactNode }) {
     },
 
     updateReservation: async (id, patch) => {
-      const existing = reservations.find((reservation) => reservation.id === id)
-      if (!existing) return
+      let existing = reservations.find((reservation) => reservation.id === id)
+      if (!existing) {
+        existing = await reservationRepository.get(id)
+      }
       await reservationRepository.update(
         id,
         toReservationInput({ ...existing, ...patch }),

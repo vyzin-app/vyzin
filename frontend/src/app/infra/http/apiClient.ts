@@ -20,39 +20,43 @@ export interface ApiClient {
 
 interface ApiClientOptions {
   baseUrl: string
-  getToken: () => Promise<string | null>
+  withCredentials?: boolean
+  getToken?: () => Promise<string | null>
   onUnauthorized?: () => void
 }
 
 /**
- * Factory that builds an HTTP client (Axios) which injects the Firebase ID token
- * as a Bearer header and normalizes errors. Decouples the data layer from the
- * transport and from how the token is obtained (Dependency Inversion).
+ * HTTP client (Axios) with optional Bearer token and cookie-based sessions.
+ * Repositories import the shared singleton from `api.ts`.
  */
 export function createApiClient({
   baseUrl,
+  withCredentials = false,
   getToken,
   onUnauthorized,
 }: ApiClientOptions): ApiClient {
   const http: AxiosInstance = axios.create({
     baseURL: baseUrl,
+    withCredentials,
   })
 
-  http.interceptors.request.use(async (config) => {
-    const token = await getToken()
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  })
+  if (getToken) {
+    http.interceptors.request.use(async (config) => {
+      const token = await getToken()
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+      }
+      return config
+    })
+  }
 
   http.interceptors.response.use(
     (response) => response,
     (error: AxiosError) => {
       const status = error.response?.status ?? 0
 
-      if (status === 401) {
-        onUnauthorized?.()
+      if (status === 401 && onUnauthorized) {
+        onUnauthorized()
       }
 
       return Promise.reject(

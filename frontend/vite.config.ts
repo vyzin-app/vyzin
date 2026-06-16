@@ -13,4 +13,9 @@ export default defineConfig({
   server: {
     port: 3001,
   },
+  test: {
+    globals: true,
+    environment: "node",
+    include: ["src/**/*.test.ts"],
+  },
 });

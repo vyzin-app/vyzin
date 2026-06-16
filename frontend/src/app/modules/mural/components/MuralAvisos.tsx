@@ -372,7 +372,11 @@ export function MuralAvisos() {
 
               <div className="flex items-center justify-between pt-4 border-t">
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span>{announcement.author}</span>
+                  <span>
+                    {announcement.authorDisplay ??
+                      announcement.authorName ??
+                      announcement.author}
+                  </span>
                   <span>•</span>
                   <span>{formatDate(announcement.date)}</span>
                 </div>

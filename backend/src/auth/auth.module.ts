@@ -6,16 +6,18 @@ import { AuthController } from './controllers/auth.controller';
 import { FunctionsController } from './controllers/functions.controller';
 import { FirebaseAuthGuard } from './guards/firebase-auth.guard';
 import { FunctionGuard } from './guards/function.guard';
+import { AuthSessionService } from './services/auth-session.service';
 
 /**
- * Autenticacao (Firebase ID token) e autorizacao (RBAC por funcao/perfil).
- * Os dois guards sao globais: FirebaseAuthGuard valida o token e o
- * FunctionGuard resolve o perfil e checa @RequireFunction.
+ * Autenticacao (Firebase session cookie / ID token) e autorizacao (RBAC por
+ * funcao/perfil no Firestore). Login/logout passam pelo backend — o frontend
+ * nao usa o Firebase SDK.
  */
 @Module({
   imports: [ProfilesModule, UsersModule],
   controllers: [AuthController, FunctionsController],
   providers: [
+    AuthSessionService,
     { provide: APP_GUARD, useClass: FirebaseAuthGuard },
     { provide: APP_GUARD, useClass: FunctionGuard },
   ],

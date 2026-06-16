@@ -14,10 +14,12 @@ No estágio atual (MVP), o foco está em:
 - **Reservas** de áreas comuns (salão, churrasqueiras, quadra, piscina, sala de reuniões)
 - **Controle de visitantes** (cadastro, autorização na portaria, registro de saída)
 - **Vínculo reserva ↔ convidados** (cadastro e associação na mesma reserva)
+- **Pré-autorizados** (diaristas, familiares recorrentes — cadastro por morador)
 - **Mural de avisos** (comunicados, manutenções, eventos)
 - **Relatório operacional** (joins entre reservas, visitantes, moradores e perfis; export CSV)
-- **Informações do condomínio** (regras e contatos — conteúdo estático no MVP)
+- **Informações do condomínio** (contatos, regras, endereço — persistidas via API; edição admin)
 - **Gestão de usuários e perfis** (RBAC dinâmico)
+- **Autenticação centralizada** (login via backend + cookie httpOnly; sem Firebase SDK no cliente)
 
 O produto nasce no contexto de disciplinas de **Arquitetura de Software** e **Programação Web**, com requisitos explícitos de separação em camadas, MVC e persistência em nuvem.
 
@@ -151,19 +153,20 @@ mindmap
 | Frontend | React 19, TypeScript, Vite, react-router-dom, Tailwind CSS v4, shadcn/ui, Radix UI, Axios |
 | Backend | NestJS, TypeScript, class-validator, Firebase Admin SDK |
 | Infra | Firebase Auth + Firestore (projeto `vyzin-app`) |
-| Ferramentas | ESLint, Jest (backend), `requests.http` para testes manuais de API |
+| Ferramentas | ESLint, Jest (backend), Vitest (frontend), Firebase Emulators, `requests.http` |
 
 ---
 
 ## 7. Roadmap sugerido (pós-MVP)
 
-Priorização sugerida para evolução do produto:
+Itens **já entregues** no MVP atual: Informações persistidas (API + editor), dashboard com dados da API, testes e2e de todos endpoints, auth via backend, emuladores locais.
 
-1. **Informações persistidas** — backend + editor na tela Informações
-2. **Notificações** — aviso novo, visitante aguardando autorização
-3. **Export PDF** — relatórios e listagens
-4. **Dashboard com dados reais** — substituir cards mockados por métricas da API
-5. **Multi-condomínio** — `condoId` em todas as coleções
+Priorização sugerida para evolução:
+
+1. **Notificações** — aviso novo, visitante aguardando autorização
+2. **Export PDF** — relatórios e listagens
+3. **Multi-condomínio** — `condoId` em todas as coleções
+4. **Likes/comentários no mural** — API de interação social
 
 ---
 
@@ -173,8 +176,9 @@ Priorização sugerida para evolução do produto:
 |---------|------|
 | Fluxo login → dashboard | < 3 s em ambiente local |
 | Cobertura de RBAC | Toda rota protegida por função no backend |
-| Seed reproduzível | `npm run seed` idempotente com merge de funções |
-| Documentação | Domínio, técnica, casos de uso e setup descritos |
+| Seed reproduzível | `npm run seed` / `seed:local` idempotente com merge de funções |
+| Testes automatizados | 14 unitários + 46 e2e (API) + Vitest (frontend) |
+| Documentação | Domínio, técnica, mapa do código, testes e setup descritos |
 
 ---
 
@@ -185,7 +189,8 @@ Priorização sugerida para evolução do produto:
 | **Perfil** | Conjunto nomeado de funções (`profiles/{id}`). Define o que o usuário pode fazer. |
 | **Função** | Capacidade atômica (`reservations:read`, `reports:read`, etc.), mapeada a endpoints. |
 | **Usuário** | Pessoa com conta Firebase + documento Firestore (`users/{uid}`). |
-| **Custom claim** | Metadado no token Firebase: `{ profileId }`. |
+| **Sessão** | Cookie httpOnly `vyzin_session` criado pelo backend após login. |
+| **Custom claim** | Metadado no Firebase Auth: `{ profileId }` (funções vêm do Firestore). |
 | **Security scope** | Regra de filtro/ownership aplicada na camada de persistência por entidade. |
 | **Workflow** | Transições de estado de visitante (autorizar, negar, registrar saída). |
 | **Ownership** | Regra em que morador só altera registros criados por ele (`createdBy` / `authorizedBy`). |

@@ -5,7 +5,7 @@ import { Label } from "./ui/label";
 import { Card } from "./ui/card";
 import { Building2, AlertCircle } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
-import { mapFirebaseAuthError } from "../services/auth/FirebaseAuthService";
+import { mapAuthError } from "../services/auth/authErrors";
 
 export function Login() {
   const [email, setEmail] = useState("");
@@ -24,7 +24,7 @@ export function Login() {
     try {
       await login(email, password);
     } catch (err) {
-      setError(mapFirebaseAuthError(err));
+      setError(mapAuthError(err));
     } finally {
       setIsSubmitting(false);
     }

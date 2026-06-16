@@ -54,6 +54,9 @@ export class ReportsService {
       if (visitor.authorizedBy) {
         userIds.add(visitor.authorizedBy);
       }
+      if (visitor.createdBy) {
+        userIds.add(visitor.createdBy);
+      }
     }
 
     const [userMap, profileMap] = await Promise.all([
@@ -231,7 +234,9 @@ export class ReportsService {
     userMap: Map<string, User>,
     profileMap: Map<string, Profile>,
   ): OperationalReportVisitorRowDTO {
-    const authorizer = userMap.get(visitor.authorizedBy);
+    // Falls back to the registrant while the visitor is still waiting (no authorizer yet).
+    const authorizer =
+      userMap.get(visitor.authorizedBy) ?? userMap.get(visitor.createdBy);
     const owner = reservation
       ? userMap.get(reservation.createdBy)
       : undefined;

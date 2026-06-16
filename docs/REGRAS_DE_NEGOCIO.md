@@ -11,7 +11,7 @@ Este documento descreve **o que o sistema faz e não faz**, independentemente da
 
 | ID | Regra |
 |----|-------|
-| RN-01 | Toda operação sensível exige usuário autenticado (token Firebase válido). |
+| RN-01 | Toda operação sensível exige usuário autenticado (cookie de sessão válido ou token Firebase). |
 | RN-02 | Permissões são definidas por **perfil**, não hardcoded por papel fixo no código de negócio. |
 | RN-03 | O backend é a **fonte de verdade** para autorização; o frontend apenas oculta UI. |
 | RN-04 | Um usuário pertence a **exatamente um perfil** por vez (`profileId`). |
@@ -24,24 +24,31 @@ Este documento descreve **o que o sistema faz e não faz**, independentemente da
 
 ### RN-AUTH-01 — Login
 
-- Login via **e-mail e senha** (Firebase Authentication).
-- Após login, o frontend armazena o ID token e envia `Authorization: Bearer <token>` em toda requisição à API.
+- Login via **e-mail e senha** através da API: `POST /auth/login`.
+- O backend autentica no Firebase (REST Identity Toolkit), cria **session cookie** e retorna `{ user, profile }`.
+- O frontend **não** usa Firebase SDK — envia o cookie `vyzin_session` automaticamente (`withCredentials: true`).
 
-### RN-AUTH-02 — Custom claim
+### RN-AUTH-02 — Custom claim e perfil
 
 - Ao criar ou alterar o perfil de um usuário, o backend atualiza a custom claim Firebase: `{ profileId: "<id>" }`.
-- O token carrega `profileId`; o backend carrega as **funções** a partir do documento do perfil no Firestore.
+- As **funções** são sempre carregadas do documento do perfil no Firestore pelo `FunctionGuard` (não confiar apenas no token).
 
 ### RN-AUTH-03 — Sessão
 
-- Logout remove o token local e encerra a sessão Firebase.
-- Token expirado → API retorna 401; frontend redireciona ao login.
+- Cookie `vyzin_session`: httpOnly, sameSite=lax, secure em produção.
+- `POST /auth/logout` revoga refresh tokens e limpa o cookie.
+- Sessão inválida ou expirada → API retorna **401**; frontend redireciona ao login.
 - Após alteração de funções no perfil (seed ou CRUD de perfis), usuário deve **logout/login** para recarregar permissões no frontend.
 
 ### RN-AUTH-04 — Endpoint `/auth/me`
 
-- Retorna dados do usuário (`users/{uid}`) e perfil associado.
+- Retorna dados do usuário (`users/{uid}`) e perfil associado (incluindo `functions[]`).
 - Usado pelo frontend para montar menu e flags de permissão.
+
+### RN-AUTH-05 — Autenticação alternativa (API / testes)
+
+- Rotas também aceitam `Authorization: Bearer <Firebase ID token>` para integrações.
+- Em ambiente de teste: `Bearer test:<profileId>` para simular perfis.
 
 ---
 
@@ -68,7 +75,7 @@ Funções são identificadores estáveis (`area:acao`). Catálogo completo em `b
 | `announcements:read` | Visualizar avisos |
 | `announcements:manage` | Publicar, editar e remover avisos |
 | `information:read` | Visualizar tela Informações |
-| `information:edit` | Editar conteúdo (UI only no MVP; sem API) |
+| `information:edit` | Editar conteúdo via `PUT /information` |
 | `users:read` | Listar usuários |
 | `users:manage` | Criar, editar e remover usuários |
 | `profiles:read` | Listar perfis e catálogo de funções |
@@ -136,6 +143,7 @@ Respostas enriquecidas com `createdByName`, `createdByEmail`, `createdByDisplay`
 ### RN-RES-02 — Criação
 
 - Requer `reservations:manage`.
+- **Data da reserva não pode ser anterior a hoje** (`assertNotInPast`).
 - Reservas confirmadas validam **disponibilidade do slot** (`assertSlotAvailable`).
 - `createdBy` = uid do usuário autenticado.
 
@@ -179,22 +187,43 @@ Respostas enriquecidas com `createdByName`, `createdByEmail`, `createdByDisplay`
 
 ## 6. Visitantes
 
-### RN-VIS-01 a RN-VIS-04
+### RN-VIS-01 — Tipos e workflow
 
-(Tipos `apartment` / `reservation`; workflow waiting → authorized/denied → exited; criação com `visitors:manage`; workflow com `visitors:workflow`.)
+| Campo / estado | Valores | Regra |
+|----------------|---------|-------|
+| visitType | `apartment` \| `reservation` | Origem da visita |
+| status | `waiting` → `authorized` \| `denied` → `exited` | Workflow na portaria |
+| createdBy | uid | Preenchido na criação (quem cadastrou) |
 
-### RN-VIS-05 — Edição
+- Criação requer `visitors:manage`.
+- Transição de status requer `visitors:workflow` (`PATCH /visitors/:id/status`).
 
-- Requer `visitors:manage`.
-- Escopo por `authorizedBy`: morador altera visitantes que autorizou; porteiro com `visitors:workflow` tem bypass.
+### RN-VIS-02 — Data e horário
 
-### RN-VIS-06 — Filtros
+- **Não é permitido** cadastrar visita com **data anterior a hoje**.
+- No **mesmo dia**, horário já passado é rejeitado pelo backend e desabilitado na UI.
+- Validação: `assertNotInPast` no service; `isVisitSlotInPast` no frontend.
+
+### RN-VIS-03 — Escopo de leitura e edição
+
+- Morador vê/edita visitantes onde `createdBy === uid`.
+- Porteiro com `visitors:workflow` tem bypass de escopo para operações de portaria.
+- Admin vê todos.
+
+### RN-VIS-04 — Filtros
 
 - `?status=`, `?visitType=`, `?date=`, `?search=` (servidor)
 
-### RN-VIS-07 — Exclusão
+### RN-VIS-05 — Exclusão
 
 - Remove documento; desvincula de reservas associadas via API de unlink.
+
+### RN-VIS-06 — Pré-autorizados
+
+- Cadastro separado em `/pre-authorizations` (aba na tela Visitantes).
+- Morador gerencia apenas registros com `createdBy === uid`.
+- Requer `visitors:read` (listar) e `visitors:manage` (CRUD).
+- Tipos comuns: diarista, familiar recorrente, prestador fixo.
 
 ---
 
@@ -225,7 +254,7 @@ Respostas enriquecidas com `createdByName`, `createdByEmail`, `createdByDisplay`
 |------|-----------|
 | Reserva → Morador | `createdBy` → usuário + perfil |
 | Reserva → Visitantes | `linkedVisitorIds[]` |
-| Visitante → Autorizador | `authorizedBy` → usuário + perfil |
+| Visitante → Cadastrante | `createdBy` → usuário + perfil |
 | Visitante → Reserva | Lookup reverso + solicitante da reserva |
 
 ### RN-REP-04 — Filtros
@@ -240,9 +269,21 @@ Respostas enriquecidas com `createdByName`, `createdByEmail`, `createdByDisplay`
 
 ## 9. Informações do condomínio
 
-### RN-INF-01 / RN-INF-02
+### RN-INF-01 — Persistência
 
-- Conteúdo estático no frontend; sem API no MVP.
+- Documento único no Firestore: `condoInformation/default`.
+- Campos: nome, endereço, contatos, regras, documentos.
+
+### RN-INF-02 — Leitura
+
+- Requer `information:read`.
+- Morador e perfis autorizados visualizam na rota `/informacoes`.
+
+### RN-INF-03 — Edição
+
+- Requer `information:edit` (perfil Administrador no seed).
+- `PUT /information` atualiza o documento completo.
+- UI: botão **Editar** abre dialog (`InformacoesEditDialog`) para admin.
 
 ---
 
@@ -281,20 +322,25 @@ Detalhes: [SETUP_TESTE.md](./SETUP_TESTE.md).
 | Visitantes — ler | ✓ | ✓ | Próprios* |
 | Visitantes — CRUD + vínculo | ✓ | ✓ | ✓ |
 | Visitantes — workflow | ✓ | ✓ | — |
+| Pré-autorizados — CRUD | ✓ | ✓† | Próprios |
 | Avisos — ler | ✓ | ✓ | ✓ |
 | Avisos — gerenciar | ✓ | — | — |
 | Informações — ler | ✓ | — | ✓ |
-| Relatórios | ✓ | ✓ | ✓** |
+| Informações — editar | ✓ | — | — |
+| Relatórios | ✓ | ✓ | ✓‡ |
 | Usuários — ler/gerenciar | ✓ | ✓ | — |
 | Perfis — ler/gerenciar | ✓ | — | — |
 
-\* Escopo por `authorizedBy`  
-\*\* Dados filtrados pelo security scope
+\* Escopo por `createdBy`  
+† Porteiro gerencia pré-autorizados conforme escopo de visitantes  
+‡ Dados filtrados pelo security scope
 
 ---
 
 ## 13. Referências
 
 - [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md)
+- [MAPA_DO_CODIGO.md](./MAPA_DO_CODIGO.md)
+- [TESTES.md](./TESTES.md)
 - [CASOS_DE_USO.md](./CASOS_DE_USO.md)
 - [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md)

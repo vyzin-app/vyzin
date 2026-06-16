@@ -14,7 +14,10 @@ import {
   VisitTypeEnum,
   VisitorStatusEnum,
 } from '../visitantes/entities/visitor.entity';
+import { preAuthorizationConverter } from '../pre-authorizations/mappers/pre-authorization.converter';
 import { visitorConverter } from '../visitantes/mappers/visitor.converter';
+import { InformationService } from '../informacoes/services/information.service';
+import { DEFAULT_CONDO_INFORMATION } from '../informacoes/seed/default-information';
 import { FirebaseService } from '../firebase/firebase.service';
 import { ProfilesService } from '../profiles/services/profiles.service';
 import { UsersService } from '../users/services/users.service';
@@ -44,6 +47,7 @@ interface SeedUids {
 async function seedDemoData(
   firebase: FirebaseService,
   uids: SeedUids,
+  information: InformationService,
 ): Promise<void> {
   const db = firebase.getFirestore();
   const today = atNoon(0);
@@ -73,7 +77,8 @@ async function seedDemoData(
     notes: 'Parente da moradora Maria Santos',
     visitType: VisitTypeEnum.APARTMENT,
     status: VisitorStatusEnum.WAITING,
-    authorizedBy: uids.resident,
+    createdBy: uids.resident,
+    authorizedBy: '',
   });
 
   await visitors.doc('demo-visitor-authorized').set({
@@ -88,6 +93,7 @@ async function seedDemoData(
     notes: 'Pacote para bloco M',
     visitType: VisitTypeEnum.APARTMENT,
     status: VisitorStatusEnum.AUTHORIZED,
+    createdBy: uids.resident,
     authorizedBy: uids.doorman,
   });
 
@@ -103,6 +109,7 @@ async function seedDemoData(
     notes: 'Serviço concluído',
     visitType: VisitTypeEnum.APARTMENT,
     status: VisitorStatusEnum.EXITED,
+    createdBy: uids.resident,
     authorizedBy: uids.doorman,
     exitTime: '11:30',
   });
@@ -119,7 +126,8 @@ async function seedDemoData(
     notes: 'Lista vinculada à reserva do salão',
     visitType: VisitTypeEnum.RESERVATION,
     status: VisitorStatusEnum.AUTHORIZED,
-    authorizedBy: uids.resident,
+    createdBy: uids.resident,
+    authorizedBy: uids.doorman,
   });
 
   await visitors.doc(visitorParty2Id).set({
@@ -134,7 +142,8 @@ async function seedDemoData(
     notes: 'Acompanhante de Fernanda',
     visitType: VisitTypeEnum.RESERVATION,
     status: VisitorStatusEnum.AUTHORIZED,
-    authorizedBy: uids.resident,
+    createdBy: uids.resident,
+    authorizedBy: uids.doorman,
   });
 
   await reservations.doc(reservationPartyId).set({
@@ -227,8 +236,34 @@ async function seedDemoData(
     comments: 1,
   });
 
+  await information.seedInformation(DEFAULT_CONDO_INFORMATION);
+
+  const preAuth = db
+    .collection('preAuthorizations')
+    .withConverter(preAuthorizationConverter);
+
+  await preAuth.doc('demo-preauth-1').set({
+    id: 'demo-preauth-1',
+    name: 'Diarista - Joana Souza',
+    cpf: '123.987.456-78',
+    schedule: 'Toda segunda-feira, 08:00',
+    validUntil: '2026-12-31',
+    active: true,
+    createdBy: uids.resident,
+  });
+
+  await preAuth.doc('demo-preauth-2').set({
+    id: 'demo-preauth-2',
+    name: 'Avó - Dona Maria',
+    cpf: '321.654.987-00',
+    schedule: 'Livre acesso',
+    validUntil: '2026-12-31',
+    active: true,
+    createdBy: uids.resident,
+  });
+
   Logger.log(
-    'Dados demo: 5 visitantes, 4 reservas (1 com convidados vinculados), 3 avisos.',
+    'Dados demo: 5 visitantes, 4 reservas, 3 avisos, informacoes e pre-autorizados.',
     'Seed',
   );
 }
@@ -244,6 +279,7 @@ async function seed(): Promise<void> {
   const profiles = app.get(ProfilesService);
   const users = app.get(UsersService);
   const firebase = app.get(FirebaseService);
+  const information = app.get(InformationService);
 
   await profiles.seedProfile('admin', 'Administrador', ALL_FUNCTIONS, true);
   await profiles.seedProfile(
@@ -255,6 +291,7 @@ async function seed(): Promise<void> {
       AppFunction.VISITORS_MANAGE,
       AppFunction.VISITORS_WORKFLOW,
       AppFunction.ANNOUNCEMENTS_READ,
+      AppFunction.INFORMATION_READ,
       AppFunction.USERS_READ,
       AppFunction.USERS_MANAGE,
       AppFunction.REPORTS_READ,
@@ -309,7 +346,7 @@ async function seed(): Promise<void> {
     admin: adminUid,
     doorman: doormanUid,
     resident: residentUid,
-  });
+  }, information);
 
   Logger.log('Seed concluido. Acesse http://localhost:3001 e faca login.', 'Seed');
   Logger.log('  Admin:    admin@vyzin.com / admin123', 'Seed');

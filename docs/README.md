@@ -1,54 +1,98 @@
 # Documentação Vyzin
 
-Índice central da documentação do projeto **Vyzin** — sistema de gestão condominial (MVP).
+Índice central da documentação do projeto **Vyzin** — gestão condominial (MVP).
 
 **Última atualização:** junho/2026
 
-## Documentos
+---
 
-| Documento | Público-alvo | Conteúdo |
-|-----------|--------------|----------|
-| **[PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md)** | Product owners, stakeholders, professores | Visão do produto, escopo do MVP, personas, roadmap |
-| **[REGRAS_DE_NEGOCIO.md](./REGRAS_DE_NEGOCIO.md)** | Analistas, QA, desenvolvedores | Regras de domínio, RBAC, ownership, validações |
-| **[DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md)** | Desenvolvedores | Arquitetura, persistência, API, frontend, modelo de dados |
-| **[CASOS_DE_USO.md](./CASOS_DE_USO.md)** | Todos | Casos de uso, fluxos, diagramas UML (Mermaid) |
-| **[SETUP_TESTE.md](./SETUP_TESTE.md)** | Desenvolvedores / QA | Firebase, seed, usuários de teste e roteiro manual |
-| **[APRESENTACAO_N2.md](./APRESENTACAO_N2.md)** | Equipe / apresentação | Roteiro N2 React: login, 3 CRUDs, relatório JOIN (6 integrantes) |
+## Por onde começar?
 
-## Leitura recomendada
+| Se você quer… | Leia |
+|---------------|------|
+| Entender o produto e o escopo | [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md) |
+| Saber o que é permitido ou proibido | [REGRAS_DE_NEGOCIO.md](./REGRAS_DE_NEGOCIO.md) |
+| Desenvolver ou dar manutenção | [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md) + [MAPA_DO_CODIGO.md](./MAPA_DO_CODIGO.md) |
+| Subir o ambiente e testar manualmente | [SETUP_TESTE.md](./SETUP_TESTE.md) |
+| Rodar ou escrever testes | [TESTES.md](./TESTES.md) |
+| Ver fluxos de usuário | [CASOS_DE_USO.md](./CASOS_DE_USO.md) |
+| Preparar apresentação N2 | [APRESENTACAO_N2.md](./APRESENTACAO_N2.md) |
 
-**Quero entender o que é o Vyzin** → [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md)
+---
 
-**Quero saber o que o sistema permite ou proíbe** → [REGRAS_DE_NEGOCIO.md](./REGRAS_DE_NEGOCIO.md)
+## Catálogo de documentos
 
-**Quero desenvolver ou dar manutenção** → [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md) + [SETUP_TESTE.md](./SETUP_TESTE.md)
+| Documento | Público | Descrição |
+|-----------|---------|-----------|
+| [PRODUTO_E_PROJETO.md](./PRODUTO_E_PROJETO.md) | Product, professores | Problema, valor, personas, MVP, roadmap |
+| [REGRAS_DE_NEGOCIO.md](./REGRAS_DE_NEGOCIO.md) | QA, analistas, devs | Regras RN-* numeradas, matriz de perfis |
+| [DOCUMENTACAO_TECNICA.md](./DOCUMENTACAO_TECNICA.md) | Desenvolvedores | Arquitetura, auth, API, persistência, frontend |
+| [MAPA_DO_CODIGO.md](./MAPA_DO_CODIGO.md) | Desenvolvedores | Referência arquivo a arquivo |
+| [CASOS_DE_USO.md](./CASOS_DE_USO.md) | Todos | Casos de uso + diagramas Mermaid |
+| [SETUP_TESTE.md](./SETUP_TESTE.md) | Devs / QA | Emuladores, env, seed, roteiro manual |
+| [TESTES.md](./TESTES.md) | Devs | Jest, Vitest, cobertura de endpoints |
+| [APRESENTACAO_N2.md](./APRESENTACAO_N2.md) | Equipe | Roteiro demo N2 (login, CRUDs, relatório) |
 
-**Quero testar cenários de usuário** → [CASOS_DE_USO.md](./CASOS_DE_USO.md) + [SETUP_TESTE.md](./SETUP_TESTE.md)
+---
 
-**Quero preparar a apresentação N2 (React)** → [APRESENTACAO_N2.md](./APRESENTACAO_N2.md)
-
-## Repositório
+## Estrutura do repositório
 
 ```
 vyzin/
-├── frontend/          # React + Vite + react-router-dom + Tailwind + shadcn/ui (porta 3001)
-├── backend/           # NestJS + camada persistence + Firebase Admin SDK (porta 3000)
-├── docs/              # Esta pasta
-└── Vyzin 1.0/         # Protótipo Figma (referência visual, não integrado)
+├── frontend/                 # SPA React (porta 3001)
+│   └── src/app/
+│       ├── modules/          # Telas por domínio
+│       ├── data/             # Repositories HTTP
+│       ├── contexts/         # Auth + cache condomínio
+│       └── domain/           # Tipos TypeScript
+├── backend/                  # API NestJS (porta 3000)
+│   └── src/
+│       ├── auth/             # Sessão, guards, RBAC
+│       ├── persistence/      # Firestore + security scopes
+│       ├── */                # Módulos de domínio
+│       └── scripts/seed.ts   # Bootstrap idempotente
+├── docs/                     # Esta pasta
+└── backend/firebase.json     # Config emuladores Auth + Firestore
 ```
 
-## Módulos funcionais (MVP)
+---
 
-| Módulo | Backend | Frontend (rota) |
-|--------|---------|-----------------|
-| Painel | — | `/dashboard` |
-| Reservas | `/reservations` | `/reservations` |
-| Visitantes | `/visitors` | `/visitantes` |
-| Mural | `/announcements` | `/mural` |
-| Relatório | `/reports/operational` | `/relatorio` |
-| Informações | — (estático) | `/informacoes` |
-| Segurança | `/users`, `/profiles` | `/seguranca/usuarios`, `/seguranca/perfis` |
+## Módulos funcionais
+
+| Módulo | Backend | Frontend | Observação |
+|--------|---------|----------|------------|
+| Painel | — | `/dashboard` | Stats e atalhos da API |
+| Reservas | `/reservations` | `/reservations` | Slots, espaços via API |
+| Visitantes | `/visitors` | `/visitantes` | Workflow + pré-autorizados |
+| Pré-autorizados | `/pre-authorizations` | aba em `/visitantes` | Por morador |
+| Mural | `/announcements` | `/mural` | |
+| Informações | `/information` | `/informacoes` | Edição admin via dialog |
+| Relatório | `/reports/operational` | `/relatorio` | Joins + CSV |
+| Segurança | `/users`, `/profiles` | `/seguranca/*` | RBAC |
+
+---
+
+## Fluxo de autenticação (resumo)
+
+```mermaid
+sequenceDiagram
+  participant UI as Frontend
+  participant API as Backend NestJS
+  participant FB as Firebase Auth
+
+  UI->>API: POST /auth/login (email, senha)
+  API->>FB: signInWithPassword (REST)
+  FB-->>API: idToken
+  API->>API: createSessionCookie
+  API-->>UI: Set-Cookie vyzin_session + user/profile
+  UI->>API: GET /auth/me (cookie automático)
+  API-->>UI: funções do perfil (RBAC)
+```
+
+O frontend **não** usa Firebase SDK — toda autenticação passa pela API.
+
+---
 
 ## Execução rápida
 
-Ver [README.md](../README.md) na raiz do repositório.
+Ver [README.md](../README.md) na raiz: emuladores → backend → seed → frontend.
